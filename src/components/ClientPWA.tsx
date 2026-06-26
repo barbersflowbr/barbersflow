@@ -64,6 +64,23 @@ export default function ClientPWA({ onNavigate, activeBarbearia, onSetActiveBarb
   // Category filter for step 1
   const [activeCategory, setActiveCategory] = useState<'Todos' | 'Cabelo' | 'Barba' | 'Combo' | 'Tratamento'>('Todos');
 
+  // Real-time sub for barbearia data
+  useEffect(() => {
+    if (!activeBarbearia) return;
+
+    const unsubscribe = import('../lib/db').then(m => 
+      m.subscribeBarbearia(activeBarbearia.id, (updated) => {
+        onSetActiveBarbearia(updated);
+      })
+    );
+
+    return () => {
+      unsubscribe.then(unsub => {
+        if (typeof unsub === 'function') unsub();
+      });
+    };
+  }, [activeBarbearia?.id]);
+
   // Days list for the Date Picker
   const dateOptions = [
     { dayName: 'Sex', dayNum: '26', fullDate: '2026-06-26' },
@@ -149,10 +166,30 @@ export default function ClientPWA({ onNavigate, activeBarbearia, onSetActiveBarb
     setBookingError(null);
   };
 
-  // Filter services by category
   const filteredServices = activeCategory === 'Todos' 
     ? services 
     : services.filter(s => s.category === activeCategory);
+
+  if (!activeBarbearia) {
+    return (
+      <div className="min-h-screen bg-[#0A0A0B] text-gray-100 flex items-center justify-center p-4">
+        <div className="text-center space-y-4 max-w-md bg-[#0E0E10] p-8 rounded-3xl border border-white/5 shadow-2xl relative overflow-hidden">
+           <div className="absolute top-0 left-0 w-32 h-32 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+          <AlertCircle className="w-12 h-12 text-amber-500 mx-auto" />
+          <h2 className="text-xl font-bold text-white tracking-tight">Nenhuma Barbearia Ativa</h2>
+          <p className="text-sm text-gray-400 leading-relaxed">
+            Para realizar um agendamento, você deve acessar o link exclusivo da sua barbearia ou estar logado no painel administrativo.
+          </p>
+          <button 
+            onClick={() => onNavigate('admin')}
+            className="w-full py-3.5 bg-amber-500 text-black rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-amber-400 transition-all active:scale-[0.98] cursor-pointer"
+          >
+            Ir para Login Administrativo
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#0A0A0B] text-gray-100 flex items-center justify-center p-4 lg:p-8 font-sans selection:bg-amber-500 selection:text-black overflow-y-auto lg:overflow-hidden relative">

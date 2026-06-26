@@ -9,7 +9,7 @@ import { Globe, LayoutDashboard, Smartphone, Compass, ChevronDown } from 'lucide
 import LandingPage from './components/LandingPage';
 import AdminPanel from './components/AdminPanel';
 import ClientPWA from './components/ClientPWA';
-import { seedDefaultData, Barbearia } from './lib/db';
+import { Barbearia } from './lib/db';
 
 export default function App() {
   // Navigation states: 'landing' (SaaS site), 'admin' (private dashboard), 'pwa' (mobile booking)
@@ -17,24 +17,47 @@ export default function App() {
   const [activeBarbearia, setActiveBarbearia] = useState<Barbearia | null>(null);
   const [isNavigatorExpanded, setIsNavigatorExpanded] = useState(false);
 
-  // Initialize and seed default data
+  // Initialize and check Supabase session
   useEffect(() => {
-    const initDb = async () => {
-      try {
-        const stored = localStorage.getItem('barbersflow_active_barbearia');
-        if (stored) {
-          setActiveBarbearia(JSON.parse(stored));
-        } else {
-          // Seed & set default
-          const defaultBarbearia = await seedDefaultData();
-          setActiveBarbearia(defaultBarbearia);
-          localStorage.setItem('barbersflow_active_barbearia', JSON.stringify(defaultBarbearia));
-        }
-      } catch (err) {
-        console.error('Failed to initialize database:', err);
+    const initSession = async () => {
+      const { supabase } = await import('./lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session?.user) {
+        const { data } = await supabase
+          .from('barbearias')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+        if (data) setActiveBarbearia(data as Barbearia);
       }
     };
-    initDb();
+    initSession();
+
+    // Listen for auth changes
+    const setupAuthListener = async () => {
+      const { supabase } = await import('./lib/supabase');
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+        if (!session) {
+          setActiveBarbearia(null);
+        } else {
+          // If we have a session but no activeBarbearia, try to fetch it
+          const { data } = await supabase
+            .from('barbearias')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+          if (data) setActiveBarbearia(data as Barbearia);
+        }
+      });
+      return subscription;
+    };
+
+    const authSubPromise = setupAuthListener();
+    
+    return () => {
+      authSubPromise.then(sub => sub.unsubscribe());
+    };
   }, []);
 
   const handleSetActiveBarbearia = (barbearia: Barbearia | null) => {

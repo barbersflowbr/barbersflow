@@ -185,13 +185,24 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
     setClientName('');
     setClientPhone('');
 
-    const unsubscribe = subscribeBookings(activeBarbearia.id, (realtimeList) => {
+    const unsubscribeBookings = subscribeBookings(activeBarbearia.id, (realtimeList) => {
       setBookings(realtimeList);
       setIsLoading(false);
       setErrorMessage(null);
     });
 
-    return () => unsubscribe();
+    const unsubscribeBarbearia = import('../lib/db').then(m => 
+      m.subscribeBarbearia(activeBarbearia.id, (updated) => {
+        onSetActiveBarbearia(updated);
+      })
+    );
+
+    return () => {
+      unsubscribeBookings();
+      unsubscribeBarbearia.then(unsub => {
+        if (typeof unsub === 'function') unsub();
+      });
+    };
   }, [activeBarbearia]);
 
   // Auth triggers
@@ -226,18 +237,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
     }
   };
 
-  const handleDemoLogin = async () => {
-    setAuthError(null);
-    setIsLoading(true);
-    try {
-      const shop = await loginBarbearia('demo@barbersflow.com', '123');
-      onSetActiveBarbearia(shop);
-    } catch (err: any) {
-      setAuthError(err.message || 'Erro no login demo.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+
 
   const handleCompleteOnboarding = async () => {
     if (!activeBarbearia) return;
@@ -645,19 +645,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
             </form>
           )}
 
-          <div className="h-px bg-white/5 my-6" />
 
-          {/* Demo Login Option */}
-          <div className="text-center">
-            <span className="text-[10px] text-gray-500 font-light block mb-3">QUER TESTAR AGORA SEM SE REGISTRAR?</span>
-            <button
-              onClick={handleDemoLogin}
-              disabled={isLoading}
-              className="w-full py-2.5 bg-white/5 hover:bg-white/10 text-amber-500 border border-white/5 hover:border-amber-500/20 rounded-xl text-xs font-semibold tracking-wide transition-all cursor-pointer"
-            >
-              Acessar com Barbearia Demo
-            </button>
-          </div>
         </div>
       </div>
     );

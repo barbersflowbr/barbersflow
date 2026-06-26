@@ -1,6 +1,5 @@
 import { supabase } from './supabase';
 import { Appointment, Barber, Service } from '../types';
-import { premiumBarbers, premiumServices } from '../data';
 
 export interface Barbearia {
   id: string;
@@ -30,100 +29,25 @@ export enum OperationType {
   LIST = 'list',
   GET = 'get',
   WRITE = 'write',
+  READ = 'read',
 }
 
 export function handleSupabaseError(error: any, operationType: OperationType, path: string | null): never {
   console.error(`Supabase Error during ${operationType} on ${path}:`, error);
-  throw error;
-}
-
-// Seed default barbearia so user has an active demo account to login
-export async function seedDefaultData(): Promise<Barbearia> {
-  const demoEmail = 'demo@barbersflow.com';
   
-  const { data: existing, error: getError } = await supabase
-    .from(BARBEARIAS_COL)
-    .select('*')
-    .eq('email', demoEmail)
-    .single();
+  let msg = 'Erro desconhecido no banco de dados.';
+  let hint = '';
+  let code = '';
 
-  if (existing) {
-    return existing as Barbearia;
+  if (typeof error === 'string') {
+    msg = error;
+  } else if (error && typeof error === 'object') {
+    msg = error.message || error.error_description || error.error || JSON.stringify(error);
+    hint = error.hint ? ` (${error.hint})` : '';
+    code = error.code ? ` [Code: ${error.code}]` : '';
   }
 
-  // Create default barbearia
-  const defaultId = 'royal_barber';
-  const defaultBarbearia: Barbearia = {
-    id: defaultId,
-    name: 'Royal Barber Club',
-    email: demoEmail,
-    password: '123', // Simple password for testing
-    slug: 'royal',
-    plan: 'Pro Flow',
-    logo: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=150&h=150',
-    isOnboarded: true,
-    barbers: premiumBarbers,
-    services: premiumServices,
-    createdAt: new Date().toISOString()
-  };
-
-  const { error: insertError } = await supabase
-    .from(BARBEARIAS_COL)
-    .upsert(defaultBarbearia);
-
-  if (insertError) {
-    handleSupabaseError(insertError, OperationType.CREATE, BARBEARIAS_COL);
-  }
-
-  // Add initial mock bookings
-  const mockBookings = [
-    {
-      id: 'b1',
-      barberId: '1',
-      serviceId: 's1',
-      clientName: 'Rodrigo Silva',
-      clientEmail: 'rodrigo@email.com',
-      clientPhone: '(11) 99999-1111',
-      date: '2026-06-26',
-      time: '09:00',
-      status: 'Concluído',
-      barbeariaId: defaultId
-    },
-    {
-      id: 'b2',
-      barberId: '1',
-      serviceId: 's3',
-      clientName: 'Carlos Eduardo',
-      clientEmail: 'carlos@email.com',
-      clientPhone: '(11) 98888-2222',
-      date: '2026-06-26',
-      time: '10:00',
-      status: 'Ocupado',
-      barbeariaId: defaultId
-    },
-    {
-      id: 'b3',
-      barberId: '2',
-      serviceId: 's2',
-      clientName: 'Matheus Pereira',
-      clientEmail: 'matheus@email.com',
-      clientPhone: '(11) 97777-3333',
-      date: '2026-06-26',
-      time: '14:00',
-      status: 'Ocupado',
-      barbeariaId: defaultId
-    }
-  ];
-
-  const { error: bookingsError } = await supabase
-    .from(BOOKINGS_COL)
-    .upsert(mockBookings.map(b => ({ ...b, createdAt: new Date().toISOString() })));
-
-  if (bookingsError) {
-    handleSupabaseError(bookingsError, OperationType.CREATE, BOOKINGS_COL);
-  }
-
-  return defaultBarbearia;
+  throw new Error(`Erro no Supabase (${operationType} em ${path}): ${msg}${hint}${code}`);
 }
 
 // Register a new barbearia
@@ -138,13 +62,16 @@ export async function registerBarbearia(
   const cleanSlug = slug.toLowerCase().trim().replace(/[^a-z0-9-_]/g, '');
 
   // 1. Check if slug exists
-  const { data: slugExists } = await supabase
+  const { data: existingSlug, error: slugCheckError } = await supabase
     .from(BARBEARIAS_COL)
     .select('id')
-    .eq('slug', cleanSlug)
-    .single();
+    .eq('slug', cleanSlug);
 
-  if (slugExists) {
+  if (slugCheckError) {
+    handleSupabaseError(slugCheckError, OperationType.READ, BARBEARIAS_COL);
+  }
+
+  if (existingSlug && existingSlug.length > 0) {
     throw new Error('Este link de barbearia já está sendo usado. Escolha outro.');
   }
 
@@ -154,17 +81,30 @@ export async function registerBarbearia(
     password: password,
   });
 
+  let userId: string | undefined;
+
   if (authError) {
+    if (authError.status === 429) {
+      throw new Error('Limite de envios atingido. Por favor, aguarde alguns minutos ou use um e-mail diferente. (Dica: Desative a confirmação de e-mail no painel do Supabase para testes)');
+    }
+    
+    // If user already exists, we might still need to create their profile if it failed before
+    if (authError.message.includes('already registered')) {
+      // Try to sign in to get the ID, or just tell them to log in
+      throw new Error('Este e-mail já está cadastrado. Por favor, faça login.');
+    }
+    
     throw new Error(authError.message);
   }
 
-  if (!authData.user) {
-    throw new Error('Erro ao criar usuário.');
+  userId = authData.user?.id;
+
+  if (!userId) {
+    throw new Error('Erro ao criar usuário: ID não retornado.');
   }
 
-  const id = authData.user.id;
   const newBarbearia: Barbearia = {
-    id,
+    id: userId,
     name,
     email: cleanEmail,
     slug: cleanSlug,
@@ -175,11 +115,16 @@ export async function registerBarbearia(
     createdAt: new Date().toISOString()
   };
 
+  // 3. Create profile in public table
   const { error: dbError } = await supabase
     .from(BARBEARIAS_COL)
-    .insert(newBarbearia);
+    .upsert(newBarbearia);
 
   if (dbError) {
+    if (dbError.code === '42501' || dbError.message.includes('row-level security')) {
+      // RLS violation usually happens if email confirmations are enabled and user isn't logged in yet
+      throw new Error('Conta criada! Por favor, confirme seu e-mail ou faça login (se a confirmação de e-mail estiver ativada no Supabase, você precisará desativá-la ou confirmar o e-mail antes de continuar).');
+    }
     handleSupabaseError(dbError, OperationType.CREATE, BARBEARIAS_COL);
   }
 
@@ -197,12 +142,6 @@ export async function loginBarbearia(email: string, password: string): Promise<B
   });
 
   if (authError) {
-    // Special handling for pre-existing seed default user login
-    if (cleanEmail === 'demo@barbersflow.com' && password === '123') {
-       // Just return the seeded data if it exists
-       const { data: demo } = await supabase.from(BARBEARIAS_COL).select('*').eq('email', cleanEmail).single();
-       if (demo) return demo as Barbearia;
-    }
     throw new Error('E-mail ou senha incorretos.');
   }
 
@@ -213,7 +152,30 @@ export async function loginBarbearia(email: string, password: string): Promise<B
     .eq('id', authData.user.id)
     .single();
 
-  if (dbError || !data) {
+  if (dbError && dbError.code === 'PGRST116') {
+    // Record not found. Create it now!
+    const newBarbearia: Barbearia = {
+      id: authData.user.id,
+      name: 'Minha Barbearia',
+      email: cleanEmail,
+      slug: authData.user.id.substring(0, 8),
+      plan: 'Pro Flow',
+      isOnboarded: false,
+      barbers: [], 
+      services: [], 
+      createdAt: new Date().toISOString()
+    };
+    
+    const { error: insertError } = await supabase
+      .from(BARBEARIAS_COL)
+      .insert(newBarbearia);
+      
+    if (insertError) {
+       handleSupabaseError(insertError, OperationType.CREATE, BARBEARIAS_COL);
+    }
+    
+    return newBarbearia;
+  } else if (dbError || !data) {
     throw new Error('Dados da barbearia não encontrados no banco de dados.');
   }
 
@@ -278,6 +240,32 @@ export function subscribeBookings(
               onUpdate(sorted as Appointment[]);
             }
           });
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}
+
+// Subscribe to changes in a specific barbearia (for barbers, services updates)
+export function subscribeBarbearia(
+  barbeariaId: string, 
+  onUpdate: (barbearia: Barbearia) => void
+) {
+  const channel = supabase
+    .channel(`barbearia:${barbeariaId}`)
+    .on(
+      'postgres_changes', 
+      { 
+        event: 'UPDATE', 
+        schema: 'public', 
+        table: BARBEARIAS_COL,
+        filter: `id=eq.${barbeariaId}`
+      }, 
+      (payload) => {
+        onUpdate(payload.new as Barbearia);
       }
     )
     .subscribe();

@@ -564,7 +564,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
                       Coletamos as informações necessárias para prestar nossos serviços com excelência:
                     </p>
                     <ul className="list-disc pl-5 space-y-1.5 text-gray-400">
-                      <li><strong>Dados da Barbearia:</strong> Nome do estabelecimento, e-mail de login do proprietário, senha criptografada (através do Firebase Authentication), logotipo, localização física, serviços oferecidos, preços e nomes dos barbeiros da equipe.</li>
+                      <li><strong>Dados da Barbearia:</strong> Nome do estabelecimento, e-mail de login do proprietário, senha criptografada (através do Supabase Auth), logotipo, localização física, serviços oferecidos, preços e nomes dos barbeiros da equipe.</li>
                       <li><strong>Dados de Agendamento dos Clientes:</strong> Nome do cliente, número de telefone para contato/notificação e detalhes do agendamento (serviço escolhido, barbeiro e horário selecionado).</li>
                     </ul>
                   </section>
@@ -585,7 +585,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
                   <section className="space-y-2">
                     <h3 className="text-base font-bold text-white uppercase tracking-wider text-amber-500 text-xs font-mono">3. Segurança e Armazenamento dos Dados</h3>
                     <p>
-                      Seus dados são armazenados de forma extremamente segura através da infraestrutura de ponta do <strong>Google Cloud</strong> e do <strong>Firebase (Firestore e Firebase Authentication)</strong>. Aplicamos criptografia em trânsito e em repouso. Nós nunca vendemos, alugamos ou comercializamos dados de clientes ou estabelecimentos com terceiros.
+                      Seus dados são armazenados de forma extremamente segura através da infraestrutura de ponta do <strong>Supabase (PostgreSQL Database & Auth)</strong>. Aplicamos criptografia em trânsito e em repouso. Nós nunca vendemos, alugamos ou comercializamos dados de clientes ou estabelecimentos com terceiros.
                     </p>
                   </section>
 
