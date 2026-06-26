@@ -10,6 +10,7 @@ export interface Barbearia {
   plan: string; // 'Standard' | 'Pro Flow' | 'Black Elite'
   logo?: string;
   location?: string;
+  phone?: string; // support contact
   isOnboarded?: boolean;
   barbers: Barber[];
   services: Service[];

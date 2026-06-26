@@ -79,7 +79,7 @@ let appointments = [
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   app.use(express.json());
 
@@ -275,6 +275,62 @@ async function startServer() {
     } catch (error: any) {
       console.error('Email sending failed:', error);
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Mercado Pago Checkout Endpoint
+  app.post('/api/checkout', async (req, res) => {
+    const { planName, price, email, title } = req.body;
+
+    if (!planName || !price || !title) {
+      res.status(400).json({ error: 'planName, price and title are required' });
+      return;
+    }
+
+    try {
+      const mpToken = process.env.MERCADOPAGO_ACCESS_TOKEN;
+      if (!mpToken) {
+        console.log(`[MercadoPago Mock] Checkout para o plano: ${planName}`);
+        // Return a dummy URL for testing if no token is provided
+        res.json({ success: true, init_point: 'https://sandbox.mercadopago.com.br/checkout/v1/redirect?pref_id=mock-id-123' });
+        return;
+      }
+
+      // Initialize MercadoPago
+      const { MercadoPagoConfig, Preference } = await import('mercadopago');
+      const client = new MercadoPagoConfig({ accessToken: mpToken, options: { timeout: 5000 } });
+      const preference = new Preference(client);
+
+      // Convert price to number (it might be a string like "49.90")
+      const unitPrice = typeof price === 'string' ? parseFloat(price.replace(',', '.')) : price;
+
+      const body = {
+        items: [
+          {
+            id: planName,
+            title: title,
+            quantity: 1,
+            unit_price: unitPrice,
+            currency_id: 'BRL',
+          }
+        ],
+        payer: {
+          email: email || 'cliente@exemplo.com'
+        },
+        back_urls: {
+          success: 'https://barbersflow.com/#admin',
+          failure: 'https://barbersflow.com/#admin',
+          pending: 'https://barbersflow.com/#admin'
+        },
+        auto_return: 'approved'
+      };
+
+      const result = await preference.create({ body });
+
+      res.json({ success: true, init_point: result.init_point });
+    } catch (error: any) {
+      console.error('MercadoPago error:', error);
+      res.status(500).json({ error: error.message || 'Erro ao gerar checkout' });
     }
   });
 

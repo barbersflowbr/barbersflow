@@ -68,33 +68,72 @@ export default function App() {
     };
   }, []);
 
-  const handleSetActiveBarbearia = (barbearia: Barbearia | null) => {
+  const handleSetActiveBarbearia = (barbearia: Barbearia | null, persist: boolean = true) => {
     setActiveBarbearia(barbearia);
-    if (barbearia) {
-      localStorage.setItem('barbersflow_active_barbearia', JSON.stringify(barbearia));
-    } else {
-      localStorage.removeItem('barbersflow_active_barbearia');
+    if (persist) {
+      if (barbearia) {
+        localStorage.setItem('barbersflow_active_barbearia', JSON.stringify(barbearia));
+      } else {
+        localStorage.removeItem('barbersflow_active_barbearia');
+      }
     }
   };
 
   // Handle URL hash or direct parameter simulation on first mount if any
   useEffect(() => {
-    const handleHash = () => {
+    const handleNavigation = async () => {
       const hash = window.location.hash;
+      const pathname = window.location.pathname;
+
+      if (pathname === '/superadmin') {
+        setCurrentView('superadmin');
+        return;
+      }
+      
+      // Check if it's a slug routing (e.g. /barbearia-do-joao)
+      if (pathname.length > 1 && pathname !== '/') {
+        const slug = pathname.substring(1).toLowerCase();
+        
+        try {
+          const { supabase } = await import('./lib/supabase');
+          const { data, error } = await supabase
+            .from('barbearias')
+            .select('*')
+            .eq('slug', slug)
+            .single();
+
+          if (data && !error) {
+            handleSetActiveBarbearia(data as Barbearia, false);
+            setCurrentView('pwa');
+          } else {
+            setCurrentView('landing');
+          }
+        } catch (err) {
+          setCurrentView('landing');
+        }
+        return;
+      }
+
       if (hash.startsWith('#admin')) setCurrentView('admin');
       else if (hash.startsWith('#pwa')) setCurrentView('pwa');
       else if (hash.startsWith('#superadmin')) setCurrentView('superadmin');
       else if (hash.startsWith('#landing') || hash === '') setCurrentView('landing');
     };
     
-    // Check path for superadmin
-    if (window.location.pathname === '/superadmin') {
-      setCurrentView('superadmin');
-    }
+    handleNavigation();
     
-    handleHash();
-    window.addEventListener('hashchange', handleHash);
-    return () => window.removeEventListener('hashchange', handleHash);
+    const onHashChange = () => {
+      if (window.location.pathname === '/' || window.location.pathname === '') {
+        const hash = window.location.hash;
+        if (hash.startsWith('#admin')) setCurrentView('admin');
+        else if (hash.startsWith('#pwa')) setCurrentView('pwa');
+        else if (hash.startsWith('#superadmin')) setCurrentView('superadmin');
+        else if (hash.startsWith('#landing') || hash === '') setCurrentView('landing');
+      }
+    };
+
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
   const handleNavigate = (view: 'landing' | 'admin' | 'pwa' | 'superadmin') => {
@@ -148,12 +187,13 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
               transition={{ duration: 0.4, ease: 'circOut' }}
-              className="w-full"
+              className="w-full h-full"
             >
               <ClientPWA 
                 onNavigate={handleNavigate} 
                 activeBarbearia={activeBarbearia}
                 onSetActiveBarbearia={handleSetActiveBarbearia}
+                isStandalone={window.location.pathname.length > 1 && window.location.pathname !== '/superadmin'}
               />
             </motion.div>
           )}
@@ -178,6 +218,9 @@ export default function App() {
 
       {/* FLOATING DEVELOPER NAVIGATOR (Sleek Social-Media Style Dock) */}
       {(() => {
+        const isStandalonePWA = window.location.pathname.length > 1 && window.location.pathname !== '/superadmin';
+        if (currentView === 'pwa' && isStandalonePWA) return null;
+
         const showExpanded = isNavigatorExpanded;
 
         return (

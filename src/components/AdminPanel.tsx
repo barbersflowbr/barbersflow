@@ -105,7 +105,9 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
   const [onboardStep, setOnboardStep] = useState(1);
   const [onboardName, setOnboardName] = useState('');
   const [onboardLocation, setOnboardLocation] = useState('');
+  const [onboardPhone, setOnboardPhone] = useState('');
   const [onboardLogo, setOnboardLogo] = useState('');
+
   const [onboardServices, setOnboardServices] = useState<Service[]>([]);
   const [newServiceName, setNewServiceName] = useState('');
   const [newServicePrice, setNewServicePrice] = useState(50);
@@ -118,6 +120,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
   // Profile Settings States
   const [configName, setConfigName] = useState('');
   const [configLocation, setConfigLocation] = useState('');
+  const [configPhone, setConfigPhone] = useState('');
   const [configLogo, setConfigLogo] = useState('');
   const [isSavingConfig, setIsSavingConfig] = useState(false);
 
@@ -142,12 +145,14 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
     if (activeBarbearia) {
       setOnboardName(activeBarbearia.name || '');
       setOnboardLocation(activeBarbearia.location || '');
+      setOnboardPhone(activeBarbearia.phone || '');
       setOnboardLogo(activeBarbearia.logo || 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=150&h=150');
       setOnboardServices(activeBarbearia.services || []);
 
       // Sync active settings config
       setConfigName(activeBarbearia.name || '');
       setConfigLocation(activeBarbearia.location || '');
+      setConfigPhone(activeBarbearia.phone || '');
       setConfigLogo(activeBarbearia.logo || 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=150&h=150');
     }
   }, [activeBarbearia]);
@@ -248,6 +253,46 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
     }
   };
 
+  // ... inside AdminPanel component ...
+  const handleCheckout = async () => {
+    if (!activeBarbearia) return;
+    
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    let price = 149;
+    if (activeBarbearia.plan === 'Pro Flow') price = 289;
+    if (activeBarbearia.plan === 'Black Elite') price = 499;
+
+    try {
+      const response = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          planName: activeBarbearia.plan,
+          price: price,
+          email: activeBarbearia.email,
+          title: `Assinatura ${activeBarbearia.plan} - BarbersFlow`
+        })
+      });
+
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.error || 'Erro ao gerar link de pagamento');
+      }
+
+      // Redireciona para o Mercado Pago
+      window.location.href = data.init_point;
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Erro de conexão com o Mercado Pago');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
   const handleUpdatePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
@@ -313,6 +358,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
       await updateBarbearia(activeBarbearia.id, {
         name: onboardName.trim(),
         location: onboardLocation.trim(),
+        phone: onboardPhone.trim(),
         logo: onboardLogo.trim() || "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=150&h=150",
         services: onboardServices,
         isOnboarded: true
@@ -323,6 +369,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
         ...activeBarbearia,
         name: onboardName.trim(),
         location: onboardLocation.trim(),
+        phone: onboardPhone.trim(),
         logo: onboardLogo.trim() || "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=150&h=150",
         services: onboardServices,
         isOnboarded: true
@@ -345,6 +392,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
       await updateBarbearia(activeBarbearia.id, {
         name: configName.trim(),
         location: configLocation.trim(),
+        phone: configPhone.trim(),
         logo: configLogo.trim()
       });
 
@@ -352,6 +400,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
         ...activeBarbearia,
         name: configName.trim(),
         location: configLocation.trim(),
+        phone: configPhone.trim(),
         logo: configLogo.trim()
       });
     } catch (err: any) {
@@ -878,6 +927,21 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
                 </div>
 
                 <div>
+                  <label className="block text-[10px] font-mono text-gray-400 mb-1.5 uppercase tracking-wider font-semibold">Contato Suporte (WhatsApp)</label>
+                  <div className="relative">
+                    <Smartphone className="absolute left-3 top-3.5 w-4.5 h-4.5 text-gray-500" />
+                    <input
+                      type="text"
+                      value={onboardPhone}
+                      onChange={(e) => setOnboardPhone(e.target.value)}
+                      placeholder="Ex: 5511999999999"
+                      className="w-full pl-10 pr-4 p-3 bg-[#131316] border border-white/5 rounded-xl text-sm text-gray-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                    />
+                  </div>
+                  <span className="text-[10px] text-gray-500 mt-1 block">Número de WhatsApp (com DDD) para suporte aos seus clientes. Apenas números.</span>
+                </div>
+
+                <div>
                   <ImageUploader 
                     currentImageUrl={onboardLogo}
                     onUploadSuccess={(url) => setOnboardLogo(url)}
@@ -1294,6 +1358,15 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
           </div>
 
           <div className="flex items-center gap-4">
+            {activeBarbearia && (
+              <button 
+                onClick={handleCheckout}
+                disabled={isLoading}
+                className="hidden md:flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold rounded-lg transition-colors disabled:opacity-50"
+              >
+                {isLoading ? 'Aguarde...' : `Assinar ${activeBarbearia.plan}`}
+              </button>
+            )}
             <div className="flex items-center gap-2">
               <img 
                 className="w-8 h-8 rounded-full border border-white/10 object-cover" 
@@ -1680,6 +1753,18 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
                         placeholder="Ex: Av. Paulista, 1000 - São Paulo, SP"
                         className="w-full p-3 bg-[#131316] border border-white/5 rounded-xl text-sm text-gray-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
                       />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-mono text-gray-400 mb-1.5 uppercase tracking-wider font-semibold">Contato Suporte (WhatsApp)</label>
+                      <input
+                        type="text"
+                        value={configPhone}
+                        onChange={(e) => setConfigPhone(e.target.value)}
+                        placeholder="Ex: 5511999999999"
+                        className="w-full p-3 bg-[#131316] border border-white/5 rounded-xl text-sm text-gray-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                      />
+                      <span className="text-[10px] text-gray-500 mt-1 block">Número com DDD.</span>
                     </div>
 
                     <div>
