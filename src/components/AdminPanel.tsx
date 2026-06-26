@@ -33,7 +33,7 @@ import {
   Camera,
   Sparkles
 } from 'lucide-react';
-import { premiumBarbers, premiumServices, initialAvailableHours } from '../data';
+import { initialAvailableHours } from '../data';
 import { Appointment, Barber, Service } from '../types';
 import BarberManager from './BarberManager';
 import ImageUploader from './ImageUploader';
@@ -148,11 +148,18 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
   const [modalTime, setModalTime] = useState('');
   const [clientName, setClientName] = useState('');
   const [clientPhone, setClientPhone] = useState('');
-  const [selectedServiceId, setSelectedServiceId] = useState(premiumServices[0].id);
+  const [selectedServiceId, setSelectedServiceId] = useState('');
 
   // Dynamic references based on logged-in barbearia
-  const barbers = activeBarbearia?.barbers || premiumBarbers;
-  const services = activeBarbearia?.services || premiumServices;
+  const barbers = activeBarbearia?.barbers || [];
+  const services = activeBarbearia?.services || [];
+
+  // Update selectedServiceId when services are available
+  useEffect(() => {
+    if (services.length > 0 && !selectedServiceId) {
+      setSelectedServiceId(services[0].id);
+    }
+  }, [services, selectedServiceId]);
 
   // Real-time sub to bookings of active barbearia
   useEffect(() => {

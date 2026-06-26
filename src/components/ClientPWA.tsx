@@ -27,10 +27,9 @@ import {
   QrCode,
   X
 } from 'lucide-react';
-import { premiumBarbers, premiumServices, initialAvailableHours } from '../data';
+import { initialAvailableHours } from '../data';
 import { Barber, Service, Appointment } from '../types';
-import { Barbearia, addBooking, handleFirestoreError, OperationType } from '../lib/db';
-import { db, collection, getDocs, query, where } from '../lib/firebase';
+import { Barbearia, addBooking, getUnavailableSlots } from '../lib/db';
 
 interface ClientPWAProps {
   onNavigate: (view: 'landing' | 'admin' | 'pwa') => void;
@@ -77,32 +76,24 @@ export default function ClientPWA({ onNavigate, activeBarbearia, onSetActiveBarb
   ];
 
   // Dynamic references based on loaded barbearia
-  const barbers = activeBarbearia?.barbers || premiumBarbers;
-  const services = activeBarbearia?.services || premiumServices;
+  const barbers = activeBarbearia?.barbers || [];
+  const services = activeBarbearia?.services || [];
 
   // Call API to check slots availability for the selected barber and date
   const checkSlotsAvailability = async () => {
     if (!selectedBarber || !activeBarbearia) return;
     setIsCheckingSlots(true);
-    const unavailable: string[] = [];
     
     try {
-      const q = query(
-        collection(db, 'bookings'),
-        where('barbeariaId', '==', activeBarbearia.id),
-        where('barberId', '==', selectedBarber.id),
-        where('date', '==', selectedDate)
+      const unavailable = await getUnavailableSlots(
+        activeBarbearia.id,
+        selectedBarber.id,
+        selectedDate
       );
-      const snapshot = await getDocs(q);
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        unavailable.push(data.time);
-      });
+      setUnavailableSlots(unavailable);
     } catch (err) {
       console.error('Error fetching availability:', err);
-      handleFirestoreError(err, OperationType.LIST, 'bookings');
     } finally {
-      setUnavailableSlots(unavailable);
       setIsCheckingSlots(false);
     }
   };
