@@ -219,6 +219,65 @@ async function startServer() {
     res.json({ success: true });
   });
 
+  // Welcome Email for Barbearias
+  app.post('/api/email/welcome', async (req, res) => {
+    const { email, name, slug, plan } = req.body;
+
+    if (!email || !name) {
+      res.status(400).json({ error: 'Email and name are required' });
+      return;
+    }
+
+    try {
+      const resendKey = process.env.RESEND_API_KEY;
+      if (!resendKey) {
+        console.log(`[Email Mock] Boas-vindas para ${email} (${name}) - Slug: ${slug}, Plano: ${plan}`);
+        console.log(`[Email Mock] "Olá ${name}, bem-vindo ao BarbersFlow! Seu link é: barbersflow.com/${slug}"`);
+        res.json({ success: true, mock: true });
+        return;
+      }
+
+      const { Resend } = await import('resend');
+      const resend = new Resend(resendKey);
+
+      const { data, error } = await resend.emails.send({
+        from: 'BarbersFlow <onboarding@resend.dev>', // Usando dominio de teste do resend se n tiver dominio verificado
+        to: [email],
+        subject: `Bem-vindo ao BarbersFlow, ${name}! 🚀`,
+        html: `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+            <h1 style="color: #1a1a1a;">Bem-vindo ao BarbersFlow!</h1>
+            <p style="color: #4a4a4a; font-size: 16px;">Olá <strong>${name}</strong>,</p>
+            <p style="color: #4a4a4a; font-size: 16px;">Sua barbearia foi cadastrada com sucesso com o plano <strong>${plan}</strong>.</p>
+            <p style="color: #4a4a4a; font-size: 16px;">Seu link exclusivo de agendamento está pronto para ser compartilhado com seus clientes:</p>
+            
+            <div style="background-color: #f3f4f6; padding: 16px; border-radius: 8px; margin: 24px 0; text-align: center;">
+              <a href="https://barbersflow.com/${slug}" style="color: #2563eb; text-decoration: none; font-weight: bold; font-size: 18px;">
+                barbersflow.com/${slug}
+              </a>
+            </div>
+
+            <p style="color: #4a4a4a; font-size: 16px;">Acesse seu painel administrativo para configurar seus barbeiros, serviços e horários de funcionamento.</p>
+            
+            <br/>
+            <p style="color: #888; font-size: 14px;">Um abraço,<br/>Equipe BarbersFlow</p>
+          </div>
+        `,
+      });
+
+      if (error) {
+        console.error('Resend error:', error);
+        res.status(500).json({ error: error.message });
+        return;
+      }
+
+      res.json({ success: true, data });
+    } catch (error: any) {
+      console.error('Email sending failed:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Integrate Vite as a middleware for development
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

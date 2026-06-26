@@ -42,6 +42,8 @@ import {
   registerBarbearia, 
   loginBarbearia, 
   logoutBarbearia,
+  resetPasswordForEmail,
+  updatePassword,
   subscribeBookings, 
   addBooking, 
   updateBookingStatus, 
@@ -50,7 +52,7 @@ import {
 } from '../lib/db';
 
 interface AdminPanelProps {
-  onNavigate: (view: 'landing' | 'admin' | 'pwa') => void;
+  onNavigate: (view: 'landing' | 'admin' | 'pwa' | 'superadmin') => void;
   activeBarbearia: Barbearia | null;
   onSetActiveBarbearia: (barbearia: Barbearia | null) => void;
 }
@@ -90,13 +92,14 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Auth form states
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'recovery' | 'update_password'>('login');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authName, setAuthName] = useState('');
   const [authSlug, setAuthSlug] = useState('');
   const [authPlan, setAuthPlan] = useState('Pro Flow');
   const [authError, setAuthError] = useState<string | null>(null);
+  const [authMessage, setAuthMessage] = useState<string | null>(null);
 
   // Onboarding States
   const [onboardStep, setOnboardStep] = useState(1);
@@ -126,6 +129,13 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
   const [barberFormAvatar, setBarberFormAvatar] = useState('');
   const [barberFormSpecialties, setBarberFormSpecialties] = useState<string[]>([]);
   const [newSpecialtyInput, setNewSpecialtyInput] = useState('');
+
+  // Check for password recovery in URL
+  useEffect(() => {
+    if (window.location.hash.includes('recovery=true')) {
+      setAuthMode('update_password');
+    }
+  }, []);
 
   // Sync onboarding and configuration state with activeBarbearia
   useEffect(() => {
@@ -213,8 +223,45 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
     try {
       const shop = await loginBarbearia(authEmail, authPassword);
       onSetActiveBarbearia(shop);
+      if (authEmail === 'barbersflowbr@gmail.com') {
+        onNavigate('superadmin');
+      }
     } catch (err: any) {
       setAuthError(err.message || 'Erro ao fazer login.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRecovery = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setAuthMessage(null);
+    setIsLoading(true);
+    try {
+      await resetPasswordForEmail(authEmail);
+      setAuthMessage('Se houver uma conta com este e-mail, enviamos um link de recuperação para você.');
+    } catch (err: any) {
+      setAuthError(err.message || 'Erro ao solicitar recuperação de senha.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setAuthMessage(null);
+    setIsLoading(true);
+    try {
+      await updatePassword(authPassword);
+      setAuthMessage('Senha atualizada com sucesso! Você pode fazer login agora.');
+      setAuthMode('login');
+      setAuthPassword('');
+      // Limpa a URL hash para evitar prender na tela de update password
+      window.history.replaceState(null, '', window.location.pathname + '#admin');
+    } catch (err: any) {
+      setAuthError(err.message || 'Erro ao atualizar a senha.');
     } finally {
       setIsLoading(false);
     }
@@ -229,6 +276,25 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
         throw new Error('Link personalizado é obrigatório.');
       }
       const shop = await registerBarbearia(authName, authEmail, authPassword, authSlug, authPlan);
+      
+      // Send welcome email
+      try {
+        await fetch('/api/email/welcome', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            email: authEmail,
+            name: authName,
+            slug: authSlug,
+            plan: authPlan
+          }),
+        });
+      } catch (emailErr) {
+        console.error('Failed to send welcome email:', emailErr);
+      }
+
       onSetActiveBarbearia(shop);
     } catch (err: any) {
       setAuthError(err.message || 'Erro ao realizar cadastro.');
@@ -506,28 +572,36 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
           </div>
 
           {/* Toggle Tabs */}
-          <div className="flex bg-[#16161B] p-1 rounded-xl border border-white/5 mb-6">
-            <button
-              onClick={() => { setAuthMode('login'); setAuthError(null); }}
-              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                authMode === 'login' 
-                  ? 'bg-amber-500 text-black shadow' 
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              Entrar
-            </button>
-            <button
-              onClick={() => { setAuthMode('register'); setAuthError(null); }}
-              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                authMode === 'register' 
-                  ? 'bg-amber-500 text-black shadow' 
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              Criar Conta
-            </button>
-          </div>
+          {(authMode === 'login' || authMode === 'register') && (
+            <div className="flex bg-[#16161B] p-1 rounded-xl border border-white/5 mb-6">
+              <button
+                onClick={() => { setAuthMode('login'); setAuthError(null); }}
+                className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                  authMode === 'login' 
+                    ? 'bg-amber-500 text-black shadow' 
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                Entrar
+              </button>
+              <button
+                onClick={() => { setAuthMode('register'); setAuthError(null); }}
+                className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                  authMode === 'register' 
+                    ? 'bg-amber-500 text-black shadow' 
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                Criar Conta
+              </button>
+            </div>
+          )}
+
+          {authMessage && (
+            <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-xl text-green-400 text-xs text-center mb-5 font-light">
+              {authMessage}
+            </div>
+          )}
 
           {authError && (
             <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs text-center mb-5 font-light">
@@ -535,7 +609,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
             </div>
           )}
 
-          {authMode === 'login' ? (
+          {authMode === 'login' && (
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
                 <label className="block text-[10px] font-mono text-gray-400 mb-1.5 tracking-wider">E-MAIL</label>
@@ -550,7 +624,10 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
               </div>
 
               <div>
-                <label className="block text-[10px] font-mono text-gray-400 mb-1.5 tracking-wider">SENHA</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[10px] font-mono text-gray-400 tracking-wider">SENHA</label>
+                  <button type="button" onClick={() => { setAuthMode('recovery'); setAuthError(null); setAuthMessage(null); }} className="text-[10px] text-amber-500 hover:text-amber-400 transition-colors cursor-pointer">Esqueceu a senha?</button>
+                </div>
                 <input
                   type="password"
                   required
@@ -569,7 +646,63 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
                 {isLoading ? 'Entrando...' : 'Entrar no Painel'}
               </button>
             </form>
-          ) : (
+          )}
+          
+          {authMode === 'recovery' && (
+            <form onSubmit={handleRecovery} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-mono text-gray-400 mb-1.5 tracking-wider">E-MAIL CADASTRADO</label>
+                <input
+                  type="email"
+                  required
+                  value={authEmail}
+                  onChange={(e) => setAuthEmail(e.target.value)}
+                  placeholder="admin@barbearia.com"
+                  className="w-full p-3 bg-[#131316] border border-white/5 rounded-xl text-sm text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full py-3.5 bg-amber-500 text-black hover:bg-amber-400 rounded-xl font-bold text-xs tracking-wider transition-all shadow-[0_4px_15px_rgba(245,158,11,0.2)] hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:pointer-events-none uppercase cursor-pointer"
+              >
+                {isLoading ? 'Enviando...' : 'Recuperar Senha'}
+              </button>
+              
+              <div className="text-center pt-2">
+                <button type="button" onClick={() => { setAuthMode('login'); setAuthError(null); setAuthMessage(null); }} className="text-xs text-gray-400 hover:text-white transition-colors cursor-pointer">
+                  Voltar ao login
+                </button>
+              </div>
+            </form>
+          )}
+
+          {authMode === 'update_password' && (
+            <form onSubmit={handleUpdatePassword} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-mono text-gray-400 mb-1.5 tracking-wider">NOVA SENHA</label>
+                <input
+                  type="password"
+                  required
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full p-3 bg-[#131316] border border-white/5 rounded-xl text-sm text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full py-3.5 bg-amber-500 text-black hover:bg-amber-400 rounded-xl font-bold text-xs tracking-wider transition-all shadow-[0_4px_15px_rgba(245,158,11,0.2)] hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:pointer-events-none uppercase cursor-pointer"
+              >
+                {isLoading ? 'Atualizando...' : 'Atualizar Senha'}
+              </button>
+            </form>
+          )}
+
+          {authMode === 'register' && (
             <form onSubmit={handleRegister} className="space-y-4">
               <div>
                 <label className="block text-[10px] font-mono text-gray-400 mb-1.5 tracking-wider">NOME DA BARBEARIA</label>

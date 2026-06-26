@@ -32,7 +32,7 @@ import { Barber, Service, Appointment } from '../types';
 import { Barbearia, addBooking, getUnavailableSlots } from '../lib/db';
 
 interface ClientPWAProps {
-  onNavigate: (view: 'landing' | 'admin' | 'pwa') => void;
+  onNavigate: (view: 'landing' | 'admin' | 'pwa' | 'superadmin') => void;
   activeBarbearia: Barbearia | null;
   onSetActiveBarbearia: (barbearia: Barbearia | null) => void;
 }

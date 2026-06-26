@@ -9,12 +9,20 @@ import { Globe, LayoutDashboard, Smartphone, Compass, ChevronDown } from 'lucide
 import LandingPage from './components/LandingPage';
 import AdminPanel from './components/AdminPanel';
 import ClientPWA from './components/ClientPWA';
+import SuperAdminPanel from './components/SuperAdminPanel';
 import { Barbearia } from './lib/db';
 
 export default function App() {
-  // Navigation states: 'landing' (SaaS site), 'admin' (private dashboard), 'pwa' (mobile booking)
-  const [currentView, setCurrentView] = useState<'landing' | 'admin' | 'pwa'>('landing');
-  const [activeBarbearia, setActiveBarbearia] = useState<Barbearia | null>(null);
+  // Navigation states: 'landing' (SaaS site), 'admin' (private dashboard), 'pwa' (mobile booking), 'superadmin' (global admin)
+  const [currentView, setCurrentView] = useState<'landing' | 'admin' | 'pwa' | 'superadmin'>('landing');
+  const [activeBarbearia, setActiveBarbearia] = useState<Barbearia | null>(() => {
+    try {
+      const saved = localStorage.getItem('barbersflow_active_barbearia');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
   const [isNavigatorExpanded, setIsNavigatorExpanded] = useState(false);
 
   // Initialize and check Supabase session
@@ -29,7 +37,7 @@ export default function App() {
           .select('*')
           .eq('id', session.user.id)
           .single();
-        if (data) setActiveBarbearia(data as Barbearia);
+        if (data) handleSetActiveBarbearia(data as Barbearia);
       }
     };
     initSession();
@@ -39,7 +47,7 @@ export default function App() {
       const { supabase } = await import('./lib/supabase');
       const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
         if (!session) {
-          setActiveBarbearia(null);
+          handleSetActiveBarbearia(null);
         } else {
           // If we have a session but no activeBarbearia, try to fetch it
           const { data } = await supabase
@@ -47,7 +55,7 @@ export default function App() {
             .select('*')
             .eq('id', session.user.id)
             .single();
-          if (data) setActiveBarbearia(data as Barbearia);
+          if (data) handleSetActiveBarbearia(data as Barbearia);
         }
       });
       return subscription;
@@ -73,19 +81,27 @@ export default function App() {
   useEffect(() => {
     const handleHash = () => {
       const hash = window.location.hash;
-      if (hash === '#admin') setCurrentView('admin');
-      if (hash === '#pwa') setCurrentView('pwa');
-      if (hash === '#landing') setCurrentView('landing');
+      if (hash.startsWith('#admin')) setCurrentView('admin');
+      else if (hash.startsWith('#pwa')) setCurrentView('pwa');
+      else if (hash.startsWith('#superadmin')) setCurrentView('superadmin');
+      else if (hash.startsWith('#landing') || hash === '') setCurrentView('landing');
     };
+    
+    // Check path for superadmin
+    if (window.location.pathname === '/superadmin') {
+      setCurrentView('superadmin');
+    }
     
     handleHash();
     window.addEventListener('hashchange', handleHash);
     return () => window.removeEventListener('hashchange', handleHash);
   }, []);
 
-  const handleNavigate = (view: 'landing' | 'admin' | 'pwa') => {
+  const handleNavigate = (view: 'landing' | 'admin' | 'pwa' | 'superadmin') => {
     setCurrentView(view);
-    window.location.hash = view;
+    if (view !== 'superadmin' || window.location.pathname !== '/superadmin') {
+      window.location.hash = view;
+    }
     setIsNavigatorExpanded(false); // Collapses the navigator whenever we change page/view
   };
 
@@ -139,6 +155,22 @@ export default function App() {
                 activeBarbearia={activeBarbearia}
                 onSetActiveBarbearia={handleSetActiveBarbearia}
               />
+            </motion.div>
+          )}
+
+          {currentView === 'superadmin' && (
+            <motion.div
+              key="superadmin"
+              initial={{ opacity: 0, scale: 0.99 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.99 }}
+              transition={{ duration: 0.3, ease: 'easeOut' }}
+              className="w-full bg-white h-full min-h-[100dvh]"
+            >
+              <SuperAdminPanel onBack={() => {
+                window.history.pushState({}, '', '/');
+                handleNavigate('landing');
+              }} />
             </motion.div>
           )}
         </AnimatePresence>

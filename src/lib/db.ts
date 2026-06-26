@@ -68,10 +68,10 @@ export async function registerBarbearia(
     .eq('slug', cleanSlug);
 
   if (slugCheckError) {
-    handleSupabaseError(slugCheckError, OperationType.READ, BARBEARIAS_COL);
-  }
-
-  if (existingSlug && existingSlug.length > 0) {
+    console.warn('Could not check slug existence before auth (RLS might be active):', slugCheckError);
+    // Continue anyway, if the slug is taken, the unique constraint should catch it on insert,
+    // or if we can't read it, we just hope it's available.
+  } else if (existingSlug && existingSlug.length > 0) {
     throw new Error('Este link de barbearia já está sendo usado. Escolha outro.');
   }
 
@@ -121,6 +121,9 @@ export async function registerBarbearia(
     .upsert(newBarbearia);
 
   if (dbError) {
+    if (dbError.code === '23505') {
+      throw new Error('Este link de barbearia já está sendo usado (ou outro erro de duplicidade). Escolha outro.');
+    }
     if (dbError.code === '42501' || dbError.message.includes('row-level security')) {
       // RLS violation usually happens if email confirmations are enabled and user isn't logged in yet
       throw new Error('Conta criada! Por favor, confirme seu e-mail ou faça login (se a confirmação de e-mail estiver ativada no Supabase, você precisará desativá-la ou confirmar o e-mail antes de continuar).');
@@ -185,6 +188,26 @@ export async function loginBarbearia(email: string, password: string): Promise<B
 // Logout barbearia
 export async function logoutBarbearia(): Promise<void> {
   await supabase.auth.signOut();
+}
+
+// Reset password for barbearia
+export async function resetPasswordForEmail(email: string): Promise<void> {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/#admin&recovery=true`,
+  });
+  if (error) {
+    throw new Error(error.message || 'Erro ao enviar email de recuperação.');
+  }
+}
+
+// Update password
+export async function updatePassword(newPassword: string): Promise<void> {
+  const { error } = await supabase.auth.updateUser({
+    password: newPassword
+  });
+  if (error) {
+    throw new Error(error.message || 'Erro ao atualizar a senha.');
+  }
 }
 
 // Get all barbearias

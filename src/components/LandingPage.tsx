@@ -25,7 +25,7 @@ import {
 import { pricingPlans } from '../data';
 
 interface LandingPageProps {
-  onNavigate: (view: 'landing' | 'admin' | 'pwa') => void;
+  onNavigate: (view: 'landing' | 'admin' | 'pwa' | 'superadmin') => void;
 }
 
 export default function LandingPage({ onNavigate }: LandingPageProps) {
