@@ -31,7 +31,8 @@ import {
   Store,
   UploadCloud,
   Camera,
-  Sparkles
+  Sparkles,
+  Smartphone
 } from 'lucide-react';
 import { initialAvailableHours } from '../data';
 import { Appointment, Barber, Service } from '../types';

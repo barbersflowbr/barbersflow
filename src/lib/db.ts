@@ -17,6 +17,49 @@ export interface Barbearia {
   createdAt: string;
 }
 
+export const mockBarbearia: Barbearia = {
+  id: 'demo-barbearia-id',
+  name: 'Barbearia Premium Demo',
+  email: 'demo@barbersflow.com',
+  slug: 'barbersflow-demo',
+  plan: 'Pro Flow',
+  logo: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=150&h=150',
+  location: 'Av. Paulista, 1000 - São Paulo, SP',
+  phone: '5511999999999',
+  isOnboarded: true,
+  barbers: [
+    {
+      id: 'barber-1',
+      name: 'Thiago Silva',
+      role: 'Barbeiro Master & Visagista',
+      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&h=150',
+      rating: 4.9,
+      reviews: 124,
+      specialties: ['Corte Moderno', 'Degradê', 'Visagismo'],
+      assignedServices: ['srv-1', 'srv-2', 'srv-3'],
+      workingHours: { days: ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'], start: '09:00', end: '20:00' }
+    },
+    {
+      id: 'barber-2',
+      name: 'Lucas Mendes',
+      role: 'Especialista em Barbas',
+      avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&h=150',
+      rating: 4.8,
+      reviews: 98,
+      specialties: ['Barba de Respeito', 'Terapia Capilar'],
+      assignedServices: ['srv-2', 'srv-4'],
+      workingHours: { days: ['Ter', 'Qua', 'Qui', 'Sex', 'Sáb'], start: '10:00', end: '21:00' }
+    }
+  ],
+  services: [
+    { id: 'srv-1', name: 'Corte Degradê Moderno', price: 60, duration: 45, category: 'Cabelo', description: 'Corte preciso acompanhando o formato da cabeça e estilo do cliente.' },
+    { id: 'srv-2', name: 'Barba Completa com Toalha Quente', price: 45, duration: 30, category: 'Barba', description: 'Aparação, alinhamento e barbear clássico com toalha quente e óleos especiais.' },
+    { id: 'srv-3', name: 'Combo Cabelo + Barba', price: 95, duration: 75, category: 'Combo', description: 'Nosso serviço mais procurado. Corte de cabelo mais o tratamento completo de barba.' },
+    { id: 'srv-4', name: 'Alinhamento Capilar e Hidratação', price: 50, duration: 40, category: 'Tratamento', description: 'Tratamento profundo para fios rebeldes ou ressecados.' }
+  ],
+  createdAt: new Date().toISOString()
+};
+
 const BARBEARIAS_COL = 'barbearias';
 const BOOKINGS_COL = 'bookings';
 
@@ -304,6 +347,14 @@ export async function addBooking(
   barbeariaId: string, 
   booking: Omit<Appointment, 'id'>
 ): Promise<Appointment> {
+  if (barbeariaId === 'demo-barbearia-id') {
+    return {
+      id: Math.random().toString(36).substring(2, 15),
+      ...booking,
+      status: 'Ocupado'
+    } as Appointment;
+  }
+
   // Check double-booking
   const { data: existing } = await supabase
     .from(BOOKINGS_COL)
@@ -383,6 +434,10 @@ export async function getUnavailableSlots(
   barberId: string,
   date: string
 ): Promise<string[]> {
+  if (barbeariaId === 'demo-barbearia-id') {
+    return [];
+  }
+
   const { data, error } = await supabase
     .from(BOOKINGS_COL)
     .select('time')

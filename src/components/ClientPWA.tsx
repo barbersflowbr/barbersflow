@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import { initialAvailableHours } from '../data';
 import { Barber, Service, Appointment } from '../types';
-import { Barbearia, addBooking, getUnavailableSlots } from '../lib/db';
+import { Barbearia, addBooking, getUnavailableSlots, mockBarbearia } from '../lib/db';
 
 interface ClientPWAProps {
   onNavigate: (view: 'landing' | 'admin' | 'pwa' | 'superadmin') => void;
@@ -64,6 +64,35 @@ export default function ClientPWA({ onNavigate, activeBarbearia, onSetActiveBarb
 
   // Category filter for step 1
   const [activeCategory, setActiveCategory] = useState<'Todos' | 'Cabelo' | 'Barba' | 'Combo' | 'Tratamento'>('Todos');
+
+  const [isLoading, setIsLoading] = useState(!activeBarbearia);
+
+  // Fallback / Auto-load or Mock Barbearia
+  useEffect(() => {
+    if (!activeBarbearia) {
+      const loadDefaultBarbearia = async () => {
+        try {
+          const { getAllBarbearias } = await import('../lib/db');
+          const list = await getAllBarbearias();
+          if (list && list.length > 0) {
+            const onboarded = list.find(b => b.isOnboarded && b.barbers?.length > 0 && b.services?.length > 0);
+            const fallback = onboarded || list.find(b => b.isOnboarded) || list[0];
+            onSetActiveBarbearia(fallback);
+          } else {
+            onSetActiveBarbearia(mockBarbearia);
+          }
+        } catch (err) {
+          console.warn('Could not load database barbearias, falling back to mock:', err);
+          onSetActiveBarbearia(mockBarbearia);
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      loadDefaultBarbearia();
+    } else {
+      setIsLoading(false);
+    }
+  }, [activeBarbearia, onSetActiveBarbearia]);
 
   // Real-time sub for barbearia data
   useEffect(() => {
@@ -170,6 +199,17 @@ export default function ClientPWA({ onNavigate, activeBarbearia, onSetActiveBarb
   const filteredServices = activeCategory === 'Todos' 
     ? services 
     : services.filter(s => s.category === activeCategory);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#0A0A0B] text-gray-100 flex items-center justify-center p-4">
+        <div className="text-center space-y-4">
+          <RefreshCw className="w-8 h-8 text-amber-500 animate-spin mx-auto" />
+          <p className="text-xs text-gray-400 font-mono tracking-widest uppercase">Carregando Aplicativo...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!activeBarbearia) {
     return (
