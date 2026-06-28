@@ -31,6 +31,53 @@ import { initialAvailableHours } from '../data';
 import { Barber, Service, Appointment } from '../types';
 import { Barbearia, addBooking, getUnavailableSlots, mockBarbearia } from '../lib/db';
 
+function generateTimeSlots(start: string, end: string, intervalMinutes: number = 30): string[] {
+  if (!start || !end) return [];
+  const slots: string[] = [];
+  let [currH, currM] = start.split(':').map(Number);
+  const [endH, endM] = end.split(':').map(Number);
+  
+  const endMinutes = endH * 60 + endM;
+  
+  while (true) {
+    const currentMinutes = currH * 60 + currM;
+    if (currentMinutes >= endMinutes) break;
+    
+    const hStr = String(currH).padStart(2, '0');
+    const mStr = String(currM).padStart(2, '0');
+    slots.push(`${hStr}:${mStr}`);
+    
+    currM += intervalMinutes;
+    if (currM >= 60) {
+      currH += Math.floor(currM / 60);
+      currM = currM % 60;
+    }
+  }
+  return slots;
+}
+
+function generateDateOptions() {
+  const options = [];
+  const daysOfWeek = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+  const today = new Date();
+  
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(today.getTime());
+    d.setDate(today.getDate() + i);
+    
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const fullDate = `${yyyy}-${mm}-${dd}`;
+    
+    const dayName = daysOfWeek[d.getDay()];
+    const dayNum = String(d.getDate()).padStart(2, '0');
+    
+    options.push({ dayName, dayNum, fullDate });
+  }
+  return options;
+}
+
 interface ClientPWAProps {
   onNavigate: (view: 'landing' | 'admin' | 'pwa' | 'superadmin') => void;
   activeBarbearia: Barbearia | null;
@@ -39,11 +86,14 @@ interface ClientPWAProps {
 }
 
 export default function ClientPWA({ onNavigate, activeBarbearia, onSetActiveBarbearia, isStandalone = false }: ClientPWAProps) {
+  // Days list for the Date Picker
+  const dateOptions = generateDateOptions();
+
   // Stepper Steps: 1 - Service, 2 - Barber, 3 - Date & Time, 4 - Confirm, 5 - Success
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [selectedBarber, setSelectedBarber] = useState<Barber | null>(null);
-  const [selectedDate, setSelectedDate] = useState<string>('2026-06-26'); // YYYY-MM-DD
+  const [selectedDate, setSelectedDate] = useState<string>(dateOptions[0]?.fullDate || ''); // YYYY-MM-DD
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
 
   // Client inputs
@@ -67,7 +117,7 @@ export default function ClientPWA({ onNavigate, activeBarbearia, onSetActiveBarb
 
   const [isLoading, setIsLoading] = useState(!activeBarbearia);
 
-  // Fallback / Auto-load or Mock Barbearia
+  // Fallback / Auto-load from DB
   useEffect(() => {
     if (!activeBarbearia) {
       const loadDefaultBarbearia = async () => {
@@ -75,15 +125,14 @@ export default function ClientPWA({ onNavigate, activeBarbearia, onSetActiveBarb
           const { getAllBarbearias } = await import('../lib/db');
           const list = await getAllBarbearias();
           if (list && list.length > 0) {
-            const onboarded = list.find(b => b.isOnboarded && b.barbers?.length > 0 && b.services?.length > 0);
-            const fallback = onboarded || list.find(b => b.isOnboarded) || list[0];
-            onSetActiveBarbearia(fallback);
-          } else {
-            onSetActiveBarbearia(mockBarbearia);
+            // Find a barbearia that is fully onboarded and has both barbers and services
+            const onboarded = list.find(b => b.isOnboarded && b.barbers && b.barbers.length > 0 && b.services && b.services.length > 0);
+            if (onboarded) {
+              onSetActiveBarbearia(onboarded);
+            }
           }
         } catch (err) {
-          console.warn('Could not load database barbearias, falling back to mock:', err);
-          onSetActiveBarbearia(mockBarbearia);
+          console.warn('Could not load database barbearias:', err);
         } finally {
           setIsLoading(false);
         }
@@ -111,47 +160,35 @@ export default function ClientPWA({ onNavigate, activeBarbearia, onSetActiveBarb
     };
   }, [activeBarbearia?.id]);
 
-  // Days list for the Date Picker
-  const dateOptions = [
-    { dayName: 'Sex', dayNum: '26', fullDate: '2026-06-26' },
-    { dayName: 'Sáb', dayNum: '27', fullDate: '2026-06-27' },
-    { dayName: 'Dom', dayNum: '28', fullDate: '2026-06-28' },
-    { dayName: 'Seg', dayNum: '29', fullDate: '2026-06-29' },
-    { dayName: 'Ter', dayNum: '30', fullDate: '2026-06-30' },
-    { dayName: 'Qua', dayNum: '01', fullDate: '2026-07-01' },
-    { dayName: 'Qui', dayNum: '02', fullDate: '2026-07-02' }
-  ];
-
   // Dynamic references based on loaded barbearia
   const barbers = activeBarbearia?.barbers || [];
   const services = activeBarbearia?.services || [];
 
-  // Call API to check slots availability for the selected barber and date
-  const checkSlotsAvailability = async () => {
-    if (!selectedBarber || !activeBarbearia) return;
-    setIsCheckingSlots(true);
-    
-    try {
-      const unavailable = await getUnavailableSlots(
-        activeBarbearia.id,
-        selectedBarber.id,
-        selectedDate
-      );
-      setUnavailableSlots(unavailable);
-    } catch (err) {
-      console.error('Error fetching availability:', err);
-    } finally {
-      setIsCheckingSlots(false);
-    }
-  };
-
-  // Re-run slot checker when barber or date changes
+  // Re-run slot checker with real-time subscription when barber, date, or step changes
   useEffect(() => {
-    if (step === 3 && selectedBarber) {
-      checkSlotsAvailability();
-      setSelectedTime(null); // Reset selected time on change
-    }
-  }, [selectedBarber, selectedDate, step]);
+    if (!activeBarbearia || !selectedBarber || step !== 3) return;
+
+    setIsCheckingSlots(true);
+    setSelectedTime(null); // Reset selected time on change
+
+    const unsubscribePromise = import('../lib/db').then(m => {
+      return m.subscribeBookings(activeBarbearia.id, (allBookings) => {
+        const barberBookings = allBookings.filter(b => 
+          b.barberId === selectedBarber.id && 
+          b.date === selectedDate
+        );
+        const unavailable = barberBookings.map(b => b.time);
+        setUnavailableSlots(unavailable);
+        setIsCheckingSlots(false);
+      });
+    });
+
+    return () => {
+      unsubscribePromise.then(unsub => {
+        if (typeof unsub === 'function') unsub();
+      });
+    };
+  }, [activeBarbearia?.id, selectedBarber?.id, selectedDate, step]);
 
   // Handle final booking submission
   const handleConfirmBooking = async (e: React.FormEvent) => {
@@ -500,109 +537,147 @@ export default function ClientPWA({ onNavigate, activeBarbearia, onSetActiveBarb
             )}
 
             {/* PASSO 3: SELECIONAR DATA / HORÁRIO (Chips & API validation) */}
-            {step === 3 && (
-              <motion.div 
-                key="step3"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="flex flex-col gap-4 text-left"
-              >
-                <div>
-                  <h3 className="text-sm font-bold text-white tracking-wide">Data e Horário</h3>
-                  <p className="text-[10px] text-gray-400 font-light mt-0.5">Os horários são atualizados e validados pela API em tempo real.</p>
-                </div>
+            {step === 3 && (() => {
+              const currentDayOpt = dateOptions.find(d => d.fullDate === selectedDate);
+              const currentDayName = currentDayOpt?.dayName || '';
+              const isWorkingDaySelected = selectedBarber?.workingHours?.days 
+                ? selectedBarber.workingHours.days.includes(currentDayName) 
+                : true;
 
-                {/* Weekday Slide Selector */}
-                <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar shrink-0">
-                  {dateOptions.map((opt) => {
-                    const isSelectedDate = selectedDate === opt.fullDate;
-                    return (
-                      <button
-                        key={opt.fullDate}
-                        onClick={() => setSelectedDate(opt.fullDate)}
-                        className={`p-3 rounded-xl min-w-[55px] text-center flex flex-col items-center justify-center border transition-all cursor-pointer ${
-                          isSelectedDate
-                            ? 'bg-amber-500 border-amber-500 text-black font-bold shadow-[0_3px_12px_rgba(245,158,11,0.25)]'
-                            : 'bg-white/5 border-white/5 text-gray-400 hover:text-white'
-                        }`}
-                      >
-                        <span className={`text-[9px] uppercase font-mono tracking-wider ${isSelectedDate ? 'text-black' : 'text-gray-500'}`}>
-                          {opt.dayName}
-                        </span>
-                        <span className="text-xs font-mono font-extrabold mt-1">
-                          {opt.dayNum}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Hour Chips Grid */}
-                <div className="flex items-center justify-between text-[11px] font-mono text-gray-400 border-t border-b border-white/5 py-2">
-                  <span className="uppercase tracking-widest font-bold">Grade de Horários</span>
-                  <span className="text-amber-500/80 flex items-center gap-1">
-                    <Clock className="w-3.5 h-3.5" />
-                    Fuso: Horário de Brasília
-                  </span>
-                </div>
-
-                {isCheckingSlots ? (
-                  <div className="py-12 flex flex-col items-center justify-center text-center text-xs text-gray-500 gap-3">
-                    <RefreshCw className="w-6 h-6 text-amber-500 animate-spin" />
-                    <span>Validando disponibilidade via API...</span>
+              return (
+                <motion.div 
+                  key="step3"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  className="flex flex-col gap-4 text-left"
+                >
+                  <div>
+                    <h3 className="text-sm font-bold text-white tracking-wide">Data e Horário</h3>
+                    <p className="text-[10px] text-gray-400 font-light mt-0.5">Os horários são atualizados e validados pela API em tempo real.</p>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-3 gap-2.5">
-                    {initialAvailableHours.filter(time => {
-                      if (!selectedBarber) return true;
-                      const [hour] = time.split(':').map(Number);
-                      const [startH] = selectedBarber.workingHours.start.split(':').map(Number);
-                      const [endH] = selectedBarber.workingHours.end.split(':').map(Number);
-                      return hour >= startH && hour < endH;
-                    }).map((time) => {
-                      const isUnavailable = unavailableSlots.includes(time);
-                      const isSelectedTime = selectedTime === time;
+
+                  {/* Weekday Slide Selector */}
+                  <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar shrink-0">
+                    {dateOptions.map((opt) => {
+                      const isSelectedDate = selectedDate === opt.fullDate;
+                      const worksThisDay = selectedBarber?.workingHours?.days
+                        ? selectedBarber.workingHours.days.includes(opt.dayName)
+                        : true;
 
                       return (
                         <button
-                          key={time}
-                          disabled={isUnavailable}
-                          onClick={() => setSelectedTime(time)}
-                          className={`p-3 rounded-xl font-mono text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
-                            isUnavailable
-                              ? 'bg-neutral-900/40 border border-neutral-900 text-gray-700 cursor-not-allowed opacity-50'
-                              : isSelectedTime
-                                ? 'bg-amber-500 border-amber-500 text-black font-extrabold shadow-[0_0_15px_rgba(245,158,11,0.3)]'
-                                : 'bg-white/5 border-white/5 text-gray-200 hover:border-amber-500/30'
+                          key={opt.fullDate}
+                          onClick={() => {
+                            setSelectedDate(opt.fullDate);
+                            setSelectedTime(''); // Reset selected time on date change
+                          }}
+                          className={`p-3 rounded-xl min-w-[55px] text-center flex flex-col items-center justify-center border transition-all cursor-pointer ${
+                            isSelectedDate
+                              ? 'bg-amber-500 border-amber-500 text-black font-bold shadow-[0_3px_12px_rgba(245,158,11,0.25)]'
+                              : worksThisDay
+                                ? 'bg-white/5 border-white/5 text-gray-400 hover:text-white'
+                                : 'bg-[#121215]/30 border-white/5 text-gray-600 line-through'
                           }`}
+                          title={worksThisDay ? undefined : 'Profissional não atende neste dia'}
                         >
-                          {isUnavailable ? (
-                            <>
-                              <Lock className="w-3 h-3 text-gray-700" />
-                              <span className="line-through">{time}</span>
-                            </>
-                          ) : (
-                            time
-                          )}
+                          <span className={`text-[9px] uppercase font-mono tracking-wider ${isSelectedDate ? 'text-black' : 'text-gray-500'}`}>
+                            {opt.dayName}
+                          </span>
+                          <span className="text-xs font-mono font-extrabold mt-1">
+                            {opt.dayNum}
+                          </span>
                         </button>
                       );
                     })}
                   </div>
-                )}
 
-                <div className="mt-4 pt-4 bg-gradient-to-t from-[#0E0E10] sticky bottom-0">
-                  <button
-                    disabled={!selectedTime || isCheckingSlots}
-                    onClick={() => setStep(4)}
-                    className="w-full py-4 rounded-xl bg-amber-500 text-black text-xs font-bold tracking-wider flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed shadow-[0_4px_20px_rgba(245,158,11,0.2)]"
-                  >
-                    Próximo: Dados & Confirmar
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </motion.div>
-            )}
+                  {/* Hour Chips Grid */}
+                  <div className="flex items-center justify-between text-[11px] font-mono text-gray-400 border-t border-b border-white/5 py-2">
+                    <span className="uppercase tracking-widest font-bold">Grade de Horários</span>
+                    <span className="text-amber-500/80 flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5" />
+                      Fuso: Horário de Brasília
+                    </span>
+                  </div>
+
+                  {!isWorkingDaySelected ? (
+                    <div className="py-10 flex flex-col items-center justify-center text-center text-xs text-gray-500 gap-2 border border-white/5 bg-[#131316] rounded-2xl p-4">
+                      <AlertCircle className="w-6 h-6 text-amber-500/80 animate-bounce" />
+                      <span className="font-semibold text-gray-300">Profissional Indisponível</span>
+                      <p className="text-[10px] text-gray-500 max-w-xs px-4">
+                        {selectedBarber?.name} não trabalha aos/às <strong>{currentDayName}s</strong>. Por favor, selecione outra data.
+                      </p>
+                    </div>
+                  ) : isCheckingSlots ? (
+                    <div className="py-12 flex flex-col items-center justify-center text-center text-xs text-gray-500 gap-3">
+                      <RefreshCw className="w-6 h-6 text-amber-500 animate-spin" />
+                      <span>Validando disponibilidade via API...</span>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-3 gap-2.5">
+                      {(() => {
+                        const slots = selectedBarber && selectedBarber.workingHours
+                          ? generateTimeSlots(
+                              selectedBarber.workingHours.start, 
+                              selectedBarber.workingHours.end, 
+                              selectedBarber.workingHours.slotInterval || 30
+                            )
+                          : initialAvailableHours;
+
+                        if (slots.length === 0) {
+                          return (
+                            <p className="col-span-3 text-xs text-gray-500 italic text-center py-6">
+                              Nenhum horário disponível para esta data.
+                            </p>
+                          );
+                        }
+
+                        return slots.map((time) => {
+                          const isUnavailable = unavailableSlots.includes(time);
+                          const isSelectedTime = selectedTime === time;
+
+                          return (
+                            <button
+                              key={time}
+                              disabled={isUnavailable}
+                              onClick={() => setSelectedTime(time)}
+                              className={`p-3 rounded-xl font-mono text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                                isUnavailable
+                                  ? 'bg-neutral-900/40 border border-neutral-900 text-gray-700 cursor-not-allowed opacity-50'
+                                  : isSelectedTime
+                                    ? 'bg-amber-500 border-amber-500 text-black font-extrabold shadow-[0_0_15px_rgba(245,158,11,0.3)]'
+                                    : 'bg-white/5 border-white/5 text-gray-200 hover:border-amber-500/30'
+                              }`}
+                            >
+                              {isUnavailable ? (
+                                <>
+                                  <Lock className="w-3 h-3 text-gray-700" />
+                                  <span className="line-through">{time}</span>
+                                </>
+                              ) : (
+                                time
+                              )}
+                            </button>
+                          );
+                        });
+                      })()}
+                    </div>
+                  )}
+
+                  <div className="mt-4 pt-4 bg-gradient-to-t from-[#0E0E10] sticky bottom-0">
+                    <button
+                      disabled={!selectedTime || isCheckingSlots || !isWorkingDaySelected}
+                      onClick={() => setStep(4)}
+                      className="w-full py-4 rounded-xl bg-amber-500 text-black text-xs font-bold tracking-wider flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed shadow-[0_4px_20px_rgba(245,158,11,0.25)]"
+                    >
+                      Próximo: Dados & Confirmar
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </motion.div>
+              );
+            })()}
 
             {/* PASSO 4: CONFIRMAÇÃO DO CLIENTE */}
             {step === 4 && (

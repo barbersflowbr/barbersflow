@@ -5,6 +5,18 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend
+} from 'recharts';
 import { 
   LayoutDashboard, 
   Calendar, 
@@ -32,10 +44,16 @@ import {
   UploadCloud,
   Camera,
   Sparkles,
-  Smartphone
+  Smartphone,
+  Edit,
+  Save,
+  Package,
+  Minus,
+  RefreshCw,
+  Copy
 } from 'lucide-react';
 import { initialAvailableHours } from '../data';
-import { Appointment, Barber, Service } from '../types';
+import { Appointment, Barber, Service, InventoryItem } from '../types';
 import BarberManager from './BarberManager';
 import ImageUploader from './ImageUploader';
 import { 
@@ -49,8 +67,49 @@ import {
   addBooking, 
   updateBookingStatus, 
   deleteBookingFromDb, 
-  updateBarbearia 
+  updateBarbearia,
+  getBarbearia
 } from '../lib/db';
+
+function get7DaysWindow(anchorDateStr: string) {
+  const dates: { dateStr: string; label: string }[] = [];
+  const parts = anchorDateStr.split('-');
+  const anchor = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+  
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(anchor.getTime());
+    d.setDate(anchor.getDate() - i);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const dateStr = `${yyyy}-${mm}-${dd}`;
+    const label = d.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric' });
+    dates.push({ dateStr, label });
+  }
+  return dates;
+}
+
+const CustomTooltip = ({ active, payload, label, prefix = '' }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-[#0F0F12] border border-white/10 p-3 rounded-xl shadow-xl">
+        <p className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider mb-1">{label}</p>
+        <p className="text-sm font-extrabold text-amber-500 font-mono">
+          {prefix}{payload[0].value}
+        </p>
+      </div>
+    );
+  }
+  return null;
+};
+
+function getTodayDateString() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
 
 interface AdminPanelProps {
   onNavigate: (view: 'landing' | 'admin' | 'pwa' | 'superadmin') => void;
@@ -60,10 +119,21 @@ interface AdminPanelProps {
 
 export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBarbearia }: AdminPanelProps) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'agenda' | 'config' | 'barbeiros'>('agenda');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'agenda' | 'config' | 'barbeiros' | 'estoque'>('agenda');
   const [bookings, setBookings] = useState<Appointment[]>([]);
-  const [selectedDate, setSelectedDate] = useState<string>('2026-06-26'); // Set to default June 26, 2026
+  const [selectedDate, setSelectedDate] = useState<string>(getTodayDateString()); // Dynamic local date
   const [selectedBarberFilter, setSelectedBarberFilter] = useState<string>('all'); // 'all' or specific ID
+
+  // Inventory module states
+  const [isAddingInventory, setIsAddingInventory] = useState(false);
+  const [invFormName, setInvFormName] = useState('');
+  const [invFormCategory, setInvFormCategory] = useState<'Pomada' | 'Shampoo' | 'Lâmina' | 'Outros'>('Pomada');
+  const [invFormStock, setInvFormStock] = useState<number>(10);
+  const [invFormMinStock, setInvFormMinStock] = useState<number>(3);
+  const [invFormUnit, setInvFormUnit] = useState('unidades');
+  const [invFormCostPrice, setInvFormCostPrice] = useState<number>(0);
+  const [selectedInvCategoryFilter, setSelectedInvCategoryFilter] = useState<string>('Todos');
+  const [editingInventoryId, setEditingInventoryId] = useState<string | null>(null);
 
   const exportData = (format: 'csv' | 'json') => {
     const dataToExport = bookings.filter(b => b.date === selectedDate);
@@ -123,7 +193,18 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
   const [configLocation, setConfigLocation] = useState('');
   const [configPhone, setConfigPhone] = useState('');
   const [configLogo, setConfigLogo] = useState('');
+  const [configSlug, setConfigSlug] = useState('');
   const [isSavingConfig, setIsSavingConfig] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  // Service Settings States
+  const [isAddingService, setIsAddingService] = useState(false);
+  const [isEditingService, setIsEditingService] = useState<Service | null>(null);
+  const [serviceFormName, setServiceFormName] = useState('');
+  const [serviceFormPrice, setServiceFormPrice] = useState(40);
+  const [serviceFormDuration, setServiceFormDuration] = useState(30);
+  const [serviceFormCategory, setServiceFormCategory] = useState<'Cabelo' | 'Barba' | 'Combo' | 'Tratamento'>('Cabelo');
+  const [serviceFormDescription, setServiceFormDescription] = useState('');
 
   // Barber Settings States
   const [isEditingBarber, setIsEditingBarber] = useState<Barber | null>(null);
@@ -155,6 +236,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
       setConfigLocation(activeBarbearia.location || '');
       setConfigPhone(activeBarbearia.phone || '');
       setConfigLogo(activeBarbearia.logo || 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=150&h=150');
+      setConfigSlug(activeBarbearia.slug || '');
     }
   }, [activeBarbearia]);
 
@@ -184,7 +266,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
       setIsLoading(false);
       setClientName('');
       setClientPhone('');
-      setSelectedDate('2026-06-26');
+      setSelectedDate(getTodayDateString());
       setSelectedBarberFilter('all');
       setOnboardName('');
       setOnboardLocation('');
@@ -390,11 +472,13 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
     setIsSavingConfig(true);
     setErrorMessage(null);
     try {
+      const sanitizedSlug = configSlug.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
       await updateBarbearia(activeBarbearia.id, {
         name: configName.trim(),
         location: configLocation.trim(),
         phone: configPhone.trim(),
-        logo: configLogo.trim()
+        logo: configLogo.trim(),
+        slug: sanitizedSlug
       });
 
       onSetActiveBarbearia({
@@ -402,7 +486,8 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
         name: configName.trim(),
         location: configLocation.trim(),
         phone: configPhone.trim(),
-        logo: configLogo.trim()
+        logo: configLogo.trim(),
+        slug: sanitizedSlug
       });
     } catch (err: any) {
       console.error(err);
@@ -511,6 +596,205 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
     }
   };
 
+  // Service Management Handlers
+  const handleSaveService = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeBarbearia) return;
+    setErrorMessage(null);
+    setIsSavingConfig(true);
+
+    try {
+      let updatedServices = [...(activeBarbearia.services || [])];
+      
+      if (isEditingService) {
+        // Edit Mode
+        updatedServices = updatedServices.map(s => 
+          s.id === isEditingService.id 
+            ? { 
+                ...s, 
+                name: serviceFormName.trim(), 
+                price: Number(serviceFormPrice), 
+                duration: Number(serviceFormDuration), 
+                category: serviceFormCategory, 
+                description: serviceFormDescription.trim() 
+              } 
+            : s
+        );
+      } else {
+        // Add Mode
+        const newService: Service = {
+          id: 'srv_' + Date.now(),
+          name: serviceFormName.trim(),
+          price: Number(serviceFormPrice),
+          duration: Number(serviceFormDuration),
+          category: serviceFormCategory,
+          description: serviceFormDescription.trim()
+        };
+        updatedServices.push(newService);
+      }
+
+      await updateBarbearia(activeBarbearia.id, {
+        services: updatedServices
+      });
+
+      onSetActiveBarbearia({
+        ...activeBarbearia,
+        services: updatedServices
+      });
+
+      setIsAddingService(false);
+      setIsEditingService(null);
+    } catch (err: any) {
+      console.error(err);
+      setErrorMessage('Erro ao salvar serviço: ' + err.message);
+    } finally {
+      setIsSavingConfig(false);
+    }
+  };
+
+  const handleDeleteService = async (serviceId: string) => {
+    if (!activeBarbearia) return;
+    if (!confirm('Deseja realmente remover este serviço?')) return;
+    setErrorMessage(null);
+    setIsSavingConfig(true);
+
+    try {
+      const updatedServices = (activeBarbearia.services || []).filter(s => s.id !== serviceId);
+      await updateBarbearia(activeBarbearia.id, {
+        services: updatedServices
+      });
+
+      onSetActiveBarbearia({
+        ...activeBarbearia,
+        services: updatedServices
+      });
+    } catch (err: any) {
+      console.error(err);
+      setErrorMessage('Erro ao remover serviço: ' + err.message);
+    } finally {
+      setIsSavingConfig(false);
+    }
+  };
+
+  // Inventory Handlers
+  const handleSaveInventoryItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeBarbearia) return;
+    setErrorMessage(null);
+    setIsSavingConfig(true);
+
+    try {
+      const currentInventory = activeBarbearia.inventory || [];
+      let updatedInventory: InventoryItem[];
+
+      if (editingInventoryId) {
+        // Edit existing
+        updatedInventory = currentInventory.map(item => {
+          if (item.id === editingInventoryId) {
+            return {
+              ...item,
+              name: invFormName.trim(),
+              category: invFormCategory,
+              stock: invFormStock,
+              minStock: invFormMinStock,
+              unit: invFormUnit.trim() || 'unidades',
+              costPrice: invFormCostPrice,
+              lastUpdated: new Date().toISOString()
+            };
+          }
+          return item;
+        });
+      } else {
+        // Create new
+        const newItem: InventoryItem = {
+          id: `inv-${Date.now()}`,
+          name: invFormName.trim(),
+          category: invFormCategory,
+          stock: invFormStock,
+          minStock: invFormMinStock,
+          unit: invFormUnit.trim() || 'unidades',
+          costPrice: invFormCostPrice,
+          lastUpdated: new Date().toISOString()
+        };
+        updatedInventory = [...currentInventory, newItem];
+      }
+
+      await updateBarbearia(activeBarbearia.id, {
+        inventory: updatedInventory
+      });
+
+      onSetActiveBarbearia({
+        ...activeBarbearia,
+        inventory: updatedInventory
+      });
+
+      // Reset form
+      setInvFormName('');
+      setInvFormCategory('Pomada');
+      setInvFormStock(10);
+      setInvFormMinStock(3);
+      setInvFormUnit('unidades');
+      setInvFormCostPrice(0);
+      setIsAddingInventory(false);
+      setEditingInventoryId(null);
+    } catch (err: any) {
+      console.error(err);
+      setErrorMessage('Erro ao salvar item de estoque: ' + err.message);
+    } finally {
+      setIsSavingConfig(false);
+    }
+  };
+
+  const handleDeleteInventoryItem = async (itemId: string) => {
+    if (!activeBarbearia) return;
+    if (!confirm('Deseja realmente remover este item do estoque?')) return;
+    setErrorMessage(null);
+
+    try {
+      const updatedInventory = (activeBarbearia.inventory || []).filter(item => item.id !== itemId);
+      await updateBarbearia(activeBarbearia.id, {
+        inventory: updatedInventory
+      });
+
+      onSetActiveBarbearia({
+        ...activeBarbearia,
+        inventory: updatedInventory
+      });
+    } catch (err: any) {
+      console.error(err);
+      setErrorMessage('Erro ao remover item do estoque: ' + err.message);
+    }
+  };
+
+  const handleAdjustInventoryStock = async (itemId: string, adjustment: number) => {
+    if (!activeBarbearia) return;
+    try {
+      const updatedInventory = (activeBarbearia.inventory || []).map(item => {
+        if (item.id === itemId) {
+          const newStock = Math.max(0, item.stock + adjustment);
+          return {
+            ...item,
+            stock: newStock,
+            lastUpdated: new Date().toISOString()
+          };
+        }
+        return item;
+      });
+
+      await updateBarbearia(activeBarbearia.id, {
+        inventory: updatedInventory
+      });
+
+      onSetActiveBarbearia({
+        ...activeBarbearia,
+        inventory: updatedInventory
+      });
+    } catch (err: any) {
+      console.error(err);
+      setErrorMessage('Erro ao atualizar quantidade em estoque: ' + err.message);
+    }
+  };
+
   // Update Status
   const handleUpdateStatus = async (bookingId: string, newStatus: 'Ocupado' | 'Concluído' | 'Livre') => {
     try {
@@ -584,6 +868,23 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
   const occupancyRate = totalSlotsPossible > 0 
     ? Math.round(((busyCount + completedCount) / totalSlotsPossible) * 100) 
     : 0;
+
+  // Calculate 7-day chart data based on activeBarbearia settings & bookings
+  const rolling7Days = get7DaysWindow(selectedDate);
+  const chartData = rolling7Days.map(({ dateStr, label }) => {
+    const dayBookings = bookings.filter(b => b.date === dateStr && b.status !== 'Livre');
+    const agendamentos = dayBookings.length;
+    const receita = dayBookings.reduce((sum, b) => {
+      const service = services.find(s => s.id === b.serviceId);
+      return sum + (service ? Number(service.price) : 0);
+    }, 0);
+    return {
+      name: label,
+      agendamentos,
+      receita,
+      rawDate: dateStr
+    };
+  });
 
   // Next / Previous Date navigation
   const navigateDate = (days: number) => {
@@ -1315,6 +1616,30 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
               {!isSidebarCollapsed && <span>Barbeiros</span>}
             </button>
 
+            <button
+              onClick={() => setActiveTab('estoque')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 cursor-pointer ${
+                activeTab === 'estoque' 
+                  ? 'bg-amber-500 text-black shadow-[0_4px_15px_rgba(245,158,11,0.15)] font-bold' 
+                  : 'text-gray-400 hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              <Package className="w-5 h-5 shrink-0" />
+              {!isSidebarCollapsed && <span>Controle de Estoque</span>}
+            </button>
+
+            <button
+              onClick={() => setActiveTab('config')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 cursor-pointer ${
+                activeTab === 'config' 
+                  ? 'bg-amber-500 text-black shadow-[0_4px_15px_rgba(245,158,11,0.15)] font-bold' 
+                  : 'text-gray-400 hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              <Settings className="w-5 h-5 shrink-0" />
+              {!isSidebarCollapsed && <span>Configurações</span>}
+            </button>
+
             <div className="h-px bg-white/5 my-4" />
 
             <button
@@ -1355,6 +1680,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
               {activeTab === 'agenda' && 'Agenda de Atendimento'}
               {activeTab === 'config' && 'Configurações da Barbearia'}
              {activeTab === 'barbeiros' && 'Gerenciar Barbeiros'}
+             {activeTab === 'estoque' && 'Controle de Estoque & Consumo'}
             </h2>
           </div>
 
@@ -1450,48 +1776,102 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
                 </div>
               </div>
 
-              {/* Advanced chart visualization using pure styled elements */}
-              <div className="p-6 sm:p-8 rounded-3xl bg-[#121215] border border-white/5">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+              {/* Recharts Metrics Panel Grid */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                
+                {/* Chart 1: Revenue (Faturamento Estimado) */}
+                <div className="p-6 rounded-3xl bg-[#121215] border border-white/5 space-y-4">
                   <div>
-                    <h3 className="text-lg font-bold text-white">Faturamento Diário - Tendências da Semana</h3>
-                    <p className="text-xs text-gray-400 font-light mt-1">Análise volumétrica de agendamentos e faturamento acumulado por dia.</p>
+                    <h3 className="text-base font-bold text-white">Faturamento & Receita Estimada</h3>
+                    <p className="text-[11px] text-gray-400 mt-1 font-light">Evolução do faturamento total nos últimos 7 dias baseado nos serviços agendados.</p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="flex items-center gap-1.5 text-xs text-gray-400"><span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Faturamento</span>
-                    <span className="flex items-center gap-1.5 text-xs text-gray-400"><span className="w-2.5 h-2.5 rounded bg-amber-500/20" /> Média</span>
+                  
+                  <div className="h-72 w-full pt-4">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart
+                        data={chartData}
+                        margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                      >
+                        <defs>
+                          <linearGradient id="colorReceita" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.25}/>
+                            <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#ffffff08" vertical={false} />
+                        <XAxis 
+                          dataKey="name" 
+                          stroke="#9ca3af" 
+                          fontSize={11}
+                          tickLine={false}
+                          axisLine={false}
+                          dy={10}
+                        />
+                        <YAxis 
+                          stroke="#9ca3af" 
+                          fontSize={11}
+                          tickLine={false}
+                          axisLine={false}
+                          dx={-10}
+                          tickFormatter={(val) => `R$${val}`}
+                        />
+                        <Tooltip content={<CustomTooltip prefix="R$ " />} />
+                        <Area 
+                          type="monotone" 
+                          dataKey="receita" 
+                          stroke="#f59e0b" 
+                          strokeWidth={2.5}
+                          fillOpacity={1} 
+                          fill="url(#colorReceita)" 
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
                   </div>
                 </div>
 
-                {/* Styled Volume Chart */}
-                <div className="h-64 flex items-end gap-3.5 pt-6 border-b border-white/5 pb-2">
-                  {[
-                    { day: 'Seg', val: 420, h: '40%' },
-                    { day: 'Ter', val: 780, h: '60%' },
-                    { day: 'Qua', val: 910, h: '70%' },
-                    { day: 'Qui', val: 1140, h: '80%' },
-                    { day: 'Sex', val: totalRevenue || 1240, h: '95%', today: true },
-                    { day: 'Sáb', val: 1450, h: '100%' },
-                    { day: 'Dom', val: 0, h: '5%' }
-                  ].map((bar, idx) => (
-                    <div key={idx} className="flex-1 flex flex-col items-center gap-3 group h-full justify-end">
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-amber-500 text-black text-[10px] font-mono font-bold px-2 py-1 rounded mb-1 relative bottom-0">
-                        R$ {bar.val}
-                      </div>
-                      <div 
-                        className={`w-full rounded-t-xl transition-all duration-500 ${
-                          bar.today 
-                            ? 'bg-gradient-to-t from-amber-600 to-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.3)]' 
-                            : 'bg-white/5 hover:bg-white/10'
-                        }`}
-                        style={{ height: bar.h }}
-                      />
-                      <span className={`text-[11px] font-mono ${bar.today ? 'text-amber-500 font-bold' : 'text-gray-500'}`}>
-                        {bar.day} {bar.today && '(Hoje)'}
-                      </span>
-                    </div>
-                  ))}
+                {/* Chart 2: Bookings Volume (Volume de Agendamentos) */}
+                <div className="p-6 rounded-3xl bg-[#121215] border border-white/5 space-y-4">
+                  <div>
+                    <h3 className="text-base font-bold text-white">Volume de Agendamentos Diários</h3>
+                    <p className="text-[11px] text-gray-400 mt-1 font-light">Quantidade total de atendimentos realizados e marcados para cada dia.</p>
+                  </div>
+
+                  <div className="h-72 w-full pt-4">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={chartData}
+                        margin={{ top: 10, right: 10, left: -30, bottom: 0 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#ffffff08" vertical={false} />
+                        <XAxis 
+                          dataKey="name" 
+                          stroke="#9ca3af" 
+                          fontSize={11}
+                          tickLine={false}
+                          axisLine={false}
+                          dy={10}
+                        />
+                        <YAxis 
+                          stroke="#9ca3af" 
+                          fontSize={11}
+                          tickLine={false}
+                          axisLine={false}
+                          dx={-10}
+                          allowDecimals={false}
+                        />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Bar 
+                          dataKey="agendamentos" 
+                          fill="#f59e0b" 
+                          radius={[6, 6, 0, 0]} 
+                          maxBarSize={32}
+                          fillOpacity={0.85}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
+
               </div>
             </motion.div>
           )}
@@ -1706,8 +2086,16 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
                 barbeariaId={activeBarbearia.id}
                 barbers={barbers}
                 services={services}
-                onUpdate={() => {
-                   // Refresh logic
+                bookings={bookings}
+                onUpdate={async () => {
+                  try {
+                    const freshShop = await getBarbearia(activeBarbearia.id);
+                    if (freshShop) {
+                      onSetActiveBarbearia(freshShop);
+                    }
+                  } catch (err) {
+                    console.error("Erro ao atualizar dados do profissional:", err);
+                  }
                 }}
               />
             </motion.div>
@@ -1769,6 +2157,45 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
                     </div>
 
                     <div>
+                      <label className="block text-[10px] font-mono text-gray-400 mb-1.5 uppercase tracking-wider font-semibold">Link de Agendamento Personalizado (Slug)</label>
+                      <input
+                        type="text"
+                        required
+                        value={configSlug}
+                        onChange={(e) => setConfigSlug(e.target.value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''))}
+                        placeholder="Ex: premium-barber"
+                        className="w-full p-3 bg-[#131316] border border-white/5 rounded-xl text-sm text-gray-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 font-mono"
+                      />
+                      <div className="mt-2 p-3 bg-[#17171B] rounded-xl border border-white/5 flex items-center justify-between gap-3 overflow-hidden">
+                        <div className="min-w-0 flex-1">
+                          <span className="block text-[9px] font-mono text-gray-500 uppercase tracking-wider">Seu link de agendamento:</span>
+                          <span className="block text-xs font-mono text-amber-500 truncate mt-0.5 select-all">
+                            {window.location.origin}/{configSlug || 'sua-barbearia'}
+                          </span>
+                        </div>
+                        {configSlug && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const fullUrl = `${window.location.origin}/${configSlug}`;
+                              navigator.clipboard.writeText(fullUrl);
+                              setLinkCopied(true);
+                              setTimeout(() => setLinkCopied(false), 2000);
+                            }}
+                            className={`px-3 py-1.5 rounded-lg text-[10px] font-mono font-bold transition-all flex items-center gap-1 shrink-0 cursor-pointer ${
+                              linkCopied 
+                                ? 'bg-emerald-500 text-white shadow-[0_2px_10px_rgba(16,185,129,0.15)]' 
+                                : 'bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white'
+                            }`}
+                          >
+                            {linkCopied ? <Check size={11} /> : <Copy size={11} />}
+                            {linkCopied ? 'Copiado!' : 'Copiar'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
                       <ImageUploader 
                         currentImageUrl={configLogo}
                         onUploadSuccess={(url) => setConfigLogo(url)}
@@ -1795,6 +2222,91 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
                       </button>
                     </div>
                   </form>
+                </div>
+
+                {/* Services Offered Card */}
+                <div className="bg-[#121215] p-6 rounded-3xl border border-white/5 space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-base font-bold text-white flex items-center gap-2">
+                        <Scissors className="w-5 h-5 text-amber-500" />
+                        Serviços Oferecidos
+                      </h3>
+                      <p className="text-xs text-gray-400 mt-1">Gerencie os serviços, preços e durações oferecidos na sua barbearia.</p>
+                    </div>
+                    
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsEditingService(null);
+                        setServiceFormName('');
+                        setServiceFormPrice(40);
+                        setServiceFormDuration(30);
+                        setServiceFormCategory('Cabelo');
+                        setServiceFormDescription('');
+                        setIsAddingService(true);
+                      }}
+                      className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500 text-amber-400 hover:text-black text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Novo Serviço
+                    </button>
+                  </div>
+
+                  {/* List of Services */}
+                  <div className="space-y-3">
+                    {services.length === 0 ? (
+                      <p className="text-xs text-gray-500 italic text-center py-6">Nenhum serviço cadastrado.</p>
+                    ) : (
+                      services.map((s) => (
+                        <div key={s.id} className="p-4 rounded-2xl bg-[#131316] border border-white/5 flex items-center justify-between group relative">
+                          <div className="space-y-1 min-w-0 flex-1 pr-4">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-sm text-white truncate">{s.name}</span>
+                              <span className="px-2 py-0.5 rounded bg-white/5 text-[9px] text-amber-500 font-mono">
+                                {s.category}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-gray-400 font-mono">
+                              <span className="text-emerald-400 font-semibold">R$ {Number(s.price).toFixed(2)}</span>
+                              <span>•</span>
+                              <span>{s.duration} min</span>
+                            </div>
+                            {s.description && (
+                              <p className="text-[11px] text-gray-500 leading-relaxed mt-1 break-words">{s.description}</p>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsAddingService(false);
+                                setIsEditingService(s);
+                                setServiceFormName(s.name);
+                                setServiceFormPrice(s.price);
+                                setServiceFormDuration(s.duration);
+                                setServiceFormCategory(s.category);
+                                setServiceFormDescription(s.description || '');
+                              }}
+                              className="p-1.5 rounded-lg bg-white/5 hover:bg-amber-500 hover:text-black text-gray-400 transition-colors cursor-pointer"
+                              title="Editar Serviço"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteService(s.id)}
+                              className="p-1.5 rounded-lg bg-white/5 hover:bg-rose-500 hover:text-white text-gray-400 transition-colors cursor-pointer"
+                              title="Excluir Serviço"
+                            >
+                              <Trash className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1863,6 +2375,369 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
                     ))}
                   </div>
                 </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* TAB 5: INVENTORY CONTROL (ESTOQUE) */}
+          {activeTab === 'estoque' && activeBarbearia && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="space-y-6 pb-12"
+            >
+              {/* Alert Banner for Low Stock */}
+              {(() => {
+                const lowStockItems = (activeBarbearia.inventory || []).filter(item => item.stock <= item.minStock);
+                if (lowStockItems.length === 0) return null;
+                return (
+                  <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="text-sm font-bold text-amber-400">Atenção: Itens em Estoque Crítico!</h4>
+                      <p className="text-xs text-gray-300 mt-0.5">
+                        Os seguintes produtos estão abaixo do estoque mínimo configurado: {' '}
+                        <span className="font-semibold text-white">
+                          {lowStockItems.map(i => `${i.name} (${i.stock} ${i.unit})`).join(', ')}
+                        </span>. 
+                        Recomendamos realizar a reposição em breve.
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Stats Cards Section */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-[#121215] p-5 rounded-3xl border border-white/5 space-y-2">
+                  <span className="text-[10px] font-mono text-gray-400 uppercase tracking-widest block font-semibold">Total de Itens Cadastrados</span>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-3xl font-extrabold text-white">{(activeBarbearia.inventory || []).length}</span>
+                    <span className="text-xs text-gray-500 font-mono">produtos</span>
+                  </div>
+                </div>
+
+                <div className="bg-[#121215] p-5 rounded-3xl border border-white/5 space-y-2">
+                  <span className="text-[10px] font-mono text-gray-400 uppercase tracking-widest block font-semibold">Alerta de Estoque Baixo</span>
+                  <div className="flex items-baseline gap-2">
+                    <span className={`text-3xl font-extrabold ${
+                      (activeBarbearia.inventory || []).filter(i => i.stock <= i.minStock).length > 0 ? 'text-amber-500' : 'text-emerald-500'
+                    }`}>
+                      {(activeBarbearia.inventory || []).filter(i => i.stock <= i.minStock).length}
+                    </span>
+                    <span className="text-xs text-gray-500 font-mono">críticos</span>
+                  </div>
+                </div>
+
+                <div className="bg-[#121215] p-5 rounded-3xl border border-white/5 space-y-2">
+                  <span className="text-[10px] font-mono text-gray-400 uppercase tracking-widest block font-semibold">Investimento Estimado</span>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-3xl font-extrabold text-amber-500">
+                      R$ {
+                        (activeBarbearia.inventory || [])
+                          .reduce((acc, curr) => acc + (curr.stock * (curr.costPrice || 0)), 0)
+                          .toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                      }
+                    </span>
+                    <span className="text-xs text-gray-500 font-mono">em estoque</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sub-navbar with Filters & Quick Add */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#121215] p-4 rounded-2xl border border-white/5">
+                <div className="flex flex-wrap gap-1.5">
+                  {['Todos', 'Pomada', 'Shampoo', 'Lâmina', 'Outros'].map((cat) => {
+                    const isSelected = selectedInvCategoryFilter === cat;
+                    return (
+                      <button
+                        key={cat}
+                        onClick={() => setSelectedInvCategoryFilter(cat)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-mono transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-amber-500 text-black font-extrabold'
+                            : 'bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button
+                  onClick={() => {
+                    if (isAddingInventory) {
+                      setIsAddingInventory(false);
+                      setEditingInventoryId(null);
+                    } else {
+                      setIsAddingInventory(true);
+                      setEditingInventoryId(null);
+                      setInvFormName('');
+                      setInvFormCategory('Pomada');
+                      setInvFormStock(10);
+                      setInvFormMinStock(3);
+                      setInvFormUnit('unidades');
+                      setInvFormCostPrice(0);
+                    }
+                  }}
+                  className="w-full sm:w-auto px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold font-mono tracking-wide rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  {isAddingInventory ? <X size={14} /> : <Plus size={14} />}
+                  {isAddingInventory ? 'Cancelar' : 'Cadastrar Produto'}
+                </button>
+              </div>
+
+              {/* Grid Workspace */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Product List Grid Column */}
+                <div className={isAddingInventory || editingInventoryId ? 'lg:col-span-8' : 'lg:col-span-12'}>
+                  {(() => {
+                    const filteredItems = (activeBarbearia.inventory || []).filter(item => {
+                      if (selectedInvCategoryFilter === 'Todos') return true;
+                      return item.category === selectedInvCategoryFilter;
+                    });
+
+                    if (filteredItems.length === 0) {
+                      return (
+                        <div className="text-center py-16 bg-[#121215] rounded-3xl border border-dashed border-white/5 flex flex-col items-center justify-center space-y-3">
+                          <Package className="w-12 h-12 text-gray-600 animate-pulse" />
+                          <div className="space-y-1">
+                            <h3 className="text-sm font-bold text-white">Nenhum produto encontrado</h3>
+                            <p className="text-xs text-gray-500 font-mono">
+                              {selectedInvCategoryFilter === 'Todos' 
+                                ? 'Cadastre seu primeiro item de estoque clicando em "Cadastrar Produto".' 
+                                : `Não há produtos cadastrados na categoria "${selectedInvCategoryFilter}".`}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                        {filteredItems.map((item) => {
+                          const isLow = item.stock <= item.minStock;
+                          return (
+                            <div 
+                              key={item.id} 
+                              className={`bg-[#121215] p-5 rounded-3xl border transition-all flex flex-col justify-between space-y-4 ${
+                                isLow ? 'border-amber-500/30 shadow-[0_4px_20px_rgba(245,158,11,0.05)]' : 'border-white/5 hover:border-white/10'
+                              }`}
+                            >
+                              {/* Header Card info */}
+                              <div className="space-y-2.5">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className={`px-2 py-0.5 rounded-lg text-[9px] font-mono uppercase tracking-wider ${
+                                    item.category === 'Pomada' ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' :
+                                    item.category === 'Shampoo' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
+                                    item.category === 'Lâmina' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                                    'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+                                  }`}>
+                                    {item.category}
+                                  </span>
+
+                                  {isLow && (
+                                    <span className="flex items-center gap-1 text-[9px] font-mono text-amber-500 font-bold bg-amber-500/5 px-2 py-0.5 rounded-md border border-amber-500/10 animate-pulse">
+                                      <AlertCircle size={10} /> Estoque Baixo
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div>
+                                  <h4 className="text-sm font-bold text-white line-clamp-1" title={item.name}>{item.name}</h4>
+                                  <div className="flex justify-between text-[10px] font-mono text-gray-500 mt-1">
+                                    <span>Custo: R$ {(item.costPrice || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                    <span>Alerta em: {item.minStock} {item.unit}</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Stock Display Counter */}
+                              <div className="bg-[#18181C] p-4 rounded-2xl border border-white/5 flex items-center justify-between gap-4 font-sans">
+                                <div className="space-y-0.5">
+                                  <span className="text-[10px] font-mono text-gray-400 uppercase tracking-widest block font-medium">Quantidade</span>
+                                  <span className="text-2xl font-extrabold text-white font-mono">
+                                    {item.stock} <span className="text-xs font-normal text-gray-400 font-sans">{item.unit}</span>
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    onClick={() => handleAdjustInventoryStock(item.id, -1)}
+                                    title="Diminuir"
+                                    className="w-8 h-8 rounded-lg bg-white/5 border border-white/5 flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                                  >
+                                    <Minus size={14} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleAdjustInventoryStock(item.id, 1)}
+                                    title="Aumentar"
+                                    className="w-8 h-8 rounded-lg bg-white/5 border border-white/5 flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                                  >
+                                    <Plus size={14} />
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Footer Actions */}
+                              <div className="flex items-center justify-between border-t border-white/5 pt-3 text-[10px] text-gray-500 font-mono">
+                                <span>Ref: {item.lastUpdated ? new Date(item.lastUpdated).toLocaleDateString('pt-BR') : 'Não atualizado'}</span>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => {
+                                      setEditingInventoryId(item.id);
+                                      setIsAddingInventory(true);
+                                      setInvFormName(item.name);
+                                      setInvFormCategory(item.category);
+                                      setInvFormStock(item.stock);
+                                      setInvFormMinStock(item.minStock);
+                                      setInvFormUnit(item.unit);
+                                      setInvFormCostPrice(item.costPrice || 0);
+                                    }}
+                                    className="p-1 text-gray-400 hover:text-amber-500 transition-colors cursor-pointer"
+                                    title="Editar"
+                                  >
+                                    <Edit size={13} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteInventoryItem(item.id)}
+                                    className="p-1 text-gray-400 hover:text-red-400 transition-colors cursor-pointer"
+                                    title="Excluir"
+                                  >
+                                    <Trash size={13} />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Form Column for Add / Edit */}
+                {(isAddingInventory || editingInventoryId) && (
+                  <div className="lg:col-span-4 bg-[#121215] p-6 rounded-3xl border border-white/5 space-y-6 h-fit">
+                    <div>
+                      <h3 className="text-base font-bold text-white flex items-center gap-2">
+                        <Package className="w-5 h-5 text-amber-500" />
+                        {editingInventoryId ? 'Editar Produto' : 'Novo Produto'}
+                      </h3>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {editingInventoryId ? 'Modifique os detalhes do produto selecionado.' : 'Adicione itens de consumo ou venda ao estoque.'}
+                      </p>
+                    </div>
+
+                    <form onSubmit={handleSaveInventoryItem} className="space-y-4">
+                      <div>
+                        <label className="block text-[10px] font-mono text-gray-400 mb-1.5 uppercase tracking-wider font-semibold">Nome do Produto</label>
+                        <input
+                          type="text"
+                          required
+                          value={invFormName}
+                          onChange={(e) => setInvFormName(e.target.value)}
+                          placeholder="Ex: Pomada Brilho Matte 150g"
+                          className="w-full p-3 bg-[#131316] border border-white/5 rounded-xl text-sm text-gray-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-mono text-gray-400 mb-1.5 uppercase tracking-wider font-semibold">Categoria</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {(['Pomada', 'Shampoo', 'Lâmina', 'Outros'] as const).map((cat) => {
+                            const isSelected = invFormCategory === cat;
+                            return (
+                              <button
+                                key={cat}
+                                type="button"
+                                onClick={() => setInvFormCategory(cat)}
+                                className={`py-2 rounded-xl text-[10px] font-mono font-medium transition-all cursor-pointer text-center ${
+                                  isSelected 
+                                    ? 'bg-amber-500 text-black font-bold' 
+                                    : 'bg-white/5 hover:bg-white/10 text-gray-300 border border-white/5'
+                                }`}
+                              >
+                                {cat}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-[10px] font-mono text-gray-400 mb-1.5 uppercase tracking-wider font-semibold">Qtd Atual</label>
+                          <input
+                            type="number"
+                            required
+                            min="0"
+                            value={invFormStock}
+                            onChange={(e) => setInvFormStock(parseInt(e.target.value) || 0)}
+                            className="w-full p-3 bg-[#131316] border border-white/5 rounded-xl text-sm text-gray-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 font-mono"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-mono text-gray-400 mb-1.5 uppercase tracking-wider font-semibold">Estoque Mínimo</label>
+                          <input
+                            type="number"
+                            required
+                            min="0"
+                            value={invFormMinStock}
+                            onChange={(e) => setInvFormMinStock(parseInt(e.target.value) || 0)}
+                            className="w-full p-3 bg-[#131316] border border-white/5 rounded-xl text-sm text-gray-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 font-mono"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-[10px] font-mono text-gray-400 mb-1.5 uppercase tracking-wider font-semibold">Unidade de Medida</label>
+                          <input
+                            type="text"
+                            required
+                            value={invFormUnit}
+                            onChange={(e) => setInvFormUnit(e.target.value)}
+                            placeholder="Ex: unidades, ml"
+                            className="w-full p-3 bg-[#131316] border border-white/5 rounded-xl text-sm text-gray-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-mono text-gray-400 mb-1.5 uppercase tracking-wider font-semibold">Preço de Custo (R$)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            required
+                            value={invFormCostPrice}
+                            onChange={(e) => setInvFormCostPrice(parseFloat(e.target.value) || 0)}
+                            className="w-full p-3 bg-[#131316] border border-white/5 rounded-xl text-sm text-gray-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 font-mono"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="pt-4 flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsAddingInventory(false);
+                            setEditingInventoryId(null);
+                          }}
+                          className="flex-1 py-3.5 rounded-xl bg-white/5 border border-white/5 text-sm text-gray-300 font-semibold hover:bg-white/10 transition-colors cursor-pointer"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="submit"
+                          className="flex-1 py-3.5 rounded-xl bg-amber-500 text-black text-sm font-extrabold tracking-wide hover:bg-amber-400 transition-colors cursor-pointer"
+                        >
+                          Confirmar
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
               </div>
             </motion.div>
           )}
@@ -2099,6 +2974,151 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
                     onClick={() => {
                       setIsAddingBarber(false);
                       setIsEditingBarber(null);
+                    }}
+                    className="flex-1 py-3.5 rounded-xl bg-white/5 border border-white/5 text-sm text-gray-300 font-semibold hover:bg-white/10 transition-colors cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingConfig}
+                    className="flex-1 py-3.5 rounded-xl bg-amber-500 text-black text-sm font-extrabold tracking-wide hover:bg-amber-400 transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    {isSavingConfig ? 'Salvando...' : 'Confirmar'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ADD / EDIT SERVICE MODAL */}
+      <AnimatePresence>
+        {(isAddingService || isEditingService) && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                setIsAddingService(false);
+                setIsEditingService(null);
+              }}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+
+            {/* Modal Box */}
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-[#0F0F12] border border-white/10 rounded-3xl p-6 shadow-2xl z-10"
+            >
+              <button 
+                onClick={() => {
+                  setIsAddingService(false);
+                  setIsEditingService(null);
+                }}
+                className="absolute top-5 right-5 p-1.5 rounded-lg hover:bg-white/5 text-gray-400 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="flex items-center gap-2 mb-6">
+                <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-500 animate-pulse">
+                  <Scissors className="w-4.5 h-4.5" />
+                </div>
+                <h3 className="text-lg font-bold text-white">
+                  {isEditingService ? 'Editar Serviço' : 'Novo Serviço'}
+                </h3>
+              </div>
+
+              <form onSubmit={handleSaveService} className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-mono text-gray-400 mb-1.5 uppercase tracking-wider font-semibold">Nome do Serviço</label>
+                  <input
+                    type="text"
+                    required
+                    value={serviceFormName}
+                    onChange={(e) => setServiceFormName(e.target.value)}
+                    placeholder="Ex: Corte Degradê Navalhado"
+                    className="w-full p-3 bg-[#131316] border border-white/10 rounded-xl text-sm text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/80"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-mono text-gray-400 mb-1.5 uppercase tracking-wider font-semibold">Preço (R$)</label>
+                    <input
+                      type="number"
+                      required
+                      min="0"
+                      step="0.01"
+                      value={serviceFormPrice}
+                      onChange={(e) => setServiceFormPrice(Number(e.target.value))}
+                      placeholder="Ex: 50.00"
+                      className="w-full p-3 bg-[#131316] border border-white/10 rounded-xl text-sm text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/80"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-mono text-gray-400 mb-1.5 uppercase tracking-wider font-semibold">Duração (minutos)</label>
+                    <input
+                      type="number"
+                      required
+                      min="5"
+                      step="5"
+                      value={serviceFormDuration}
+                      onChange={(e) => setServiceFormDuration(Number(e.target.value))}
+                      placeholder="Ex: 30"
+                      className="w-full p-3 bg-[#131316] border border-white/10 rounded-xl text-sm text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/80"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-mono text-gray-400 mb-1.5 uppercase tracking-wider font-semibold">Categoria</label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {(['Cabelo', 'Barba', 'Combo', 'Tratamento'] as const).map((cat) => {
+                      const isSelected = serviceFormCategory === cat;
+                      return (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => setServiceFormCategory(cat)}
+                          className={`py-2 rounded-xl text-[10px] font-mono font-medium transition-all cursor-pointer text-center ${
+                            isSelected 
+                              ? 'bg-amber-500 text-black font-bold' 
+                              : 'bg-white/5 hover:bg-white/10 text-gray-300 border border-white/5'
+                          }`}
+                        >
+                          {cat}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-mono text-gray-400 mb-1.5 uppercase tracking-wider font-semibold">Descrição (Opcional)</label>
+                  <textarea
+                    value={serviceFormDescription}
+                    onChange={(e) => setServiceFormDescription(e.target.value)}
+                    placeholder="Ex: Corte moderno focado nas linhas do rosto com finalização com pomada premium."
+                    rows={3}
+                    className="w-full p-3 bg-[#131316] border border-white/10 rounded-xl text-sm text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/80 resize-none"
+                  />
+                </div>
+
+                <div className="pt-4 flex items-center gap-3">
+                  <button
+                    type="button"
+                    disabled={isSavingConfig}
+                    onClick={() => {
+                      setIsAddingService(false);
+                      setIsEditingService(null);
                     }}
                     className="flex-1 py-3.5 rounded-xl bg-white/5 border border-white/5 text-sm text-gray-300 font-semibold hover:bg-white/10 transition-colors cursor-pointer"
                   >

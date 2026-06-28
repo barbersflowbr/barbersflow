@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { Appointment, Barber, Service } from '../types';
+import { Appointment, Barber, Service, InventoryItem } from '../types';
 
 export interface Barbearia {
   id: string;
@@ -14,6 +14,7 @@ export interface Barbearia {
   isOnboarded?: boolean;
   barbers: Barber[];
   services: Service[];
+  inventory?: InventoryItem[];
   createdAt: string;
 }
 
@@ -56,6 +57,12 @@ export const mockBarbearia: Barbearia = {
     { id: 'srv-2', name: 'Barba Completa com Toalha Quente', price: 45, duration: 30, category: 'Barba', description: 'Aparação, alinhamento e barbear clássico com toalha quente e óleos especiais.' },
     { id: 'srv-3', name: 'Combo Cabelo + Barba', price: 95, duration: 75, category: 'Combo', description: 'Nosso serviço mais procurado. Corte de cabelo mais o tratamento completo de barba.' },
     { id: 'srv-4', name: 'Alinhamento Capilar e Hidratação', price: 50, duration: 40, category: 'Tratamento', description: 'Tratamento profundo para fios rebeldes ou ressecados.' }
+  ],
+  inventory: [
+    { id: 'inv-1', name: 'Pomada Efeito Matte Premium', category: 'Pomada', stock: 15, minStock: 5, unit: 'unidades', costPrice: 25, lastUpdated: new Date().toISOString() },
+    { id: 'inv-2', name: 'Shampoo Refresh Ice Capilar', category: 'Shampoo', stock: 8, minStock: 3, unit: 'unidades', costPrice: 18, lastUpdated: new Date().toISOString() },
+    { id: 'inv-3', name: 'Lâminas de Barbear Platinum (Cartela)', category: 'Lâmina', stock: 120, minStock: 50, unit: 'unidades', costPrice: 0.5, lastUpdated: new Date().toISOString() },
+    { id: 'inv-4', name: 'Óleo para Barba Wood & Spice', category: 'Outros', stock: 4, minStock: 2, unit: 'unidades', costPrice: 22, lastUpdated: new Date().toISOString() }
   ],
   createdAt: new Date().toISOString()
 };
@@ -271,6 +278,11 @@ export function subscribeBookings(
   barbeariaId: string, 
   onUpdate: (bookings: Appointment[]) => void
 ) {
+  if (barbeariaId === 'demo-barbearia-id') {
+    onUpdate([]);
+    return () => {};
+  }
+
   // Initial fetch
   supabase
     .from(BOOKINGS_COL)
@@ -321,6 +333,10 @@ export function subscribeBarbearia(
   barbeariaId: string, 
   onUpdate: (barbearia: Barbearia) => void
 ) {
+  if (barbeariaId === 'demo-barbearia-id') {
+    return () => {};
+  }
+
   const channel = supabase
     .channel(`barbearia:${barbeariaId}`)
     .on(
@@ -418,6 +434,10 @@ export async function updateBarbearia(
   barbeariaId: string, 
   updates: Partial<Omit<Barbearia, 'id' | 'email' | 'createdAt'>>
 ): Promise<void> {
+  if (barbeariaId === 'demo-barbearia-id') {
+    return;
+  }
+
   const { error } = await supabase
     .from(BARBEARIAS_COL)
     .update(updates)
@@ -426,6 +446,25 @@ export async function updateBarbearia(
   if (error) {
     handleSupabaseError(error, OperationType.UPDATE, BARBEARIAS_COL);
   }
+}
+
+// Get barbearia profile
+export async function getBarbearia(barbeariaId: string): Promise<Barbearia | null> {
+  if (barbeariaId === 'demo-barbearia-id') {
+    return mockBarbearia;
+  }
+  const { data, error } = await supabase
+    .from(BARBEARIAS_COL)
+    .select('*')
+    .eq('id', barbeariaId)
+    .single();
+
+  if (error) {
+    if (error.code === 'PGRST116') return null;
+    handleSupabaseError(error, OperationType.GET, BARBEARIAS_COL);
+  }
+
+  return data as Barbearia;
 }
 
 // Check slot availability

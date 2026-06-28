@@ -16,7 +16,20 @@ export interface Barber {
     days: string[];
     start: string;
     end: string;
+    slotInterval?: number; // in minutes (e.g. 15, 30, 45, 60)
   };
+  clientPreferences?: Record<string, string>; // Maps clientEmail or clientPhone to preference text
+}
+
+export interface InventoryItem {
+  id: string;
+  name: string;
+  category: 'Pomada' | 'Shampoo' | 'Lâmina' | 'Outros';
+  stock: number;
+  minStock: number;
+  unit: string; // e.g., 'unidades', 'ml', 'caixas'
+  costPrice?: number;
+  lastUpdated?: string;
 }
 
 export interface Service {
