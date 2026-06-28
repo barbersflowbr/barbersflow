@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { QRCodeCanvas } from 'qrcode.react';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -50,7 +51,10 @@ import {
   Package,
   Minus,
   RefreshCw,
-  Copy
+  Copy,
+  QrCode,
+  Printer,
+  Download
 } from 'lucide-react';
 import { initialAvailableHours } from '../data';
 import { Appointment, Barber, Service, InventoryItem } from '../types';
@@ -119,7 +123,7 @@ interface AdminPanelProps {
 
 export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBarbearia }: AdminPanelProps) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'agenda' | 'config' | 'barbeiros' | 'estoque'>('agenda');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'agenda' | 'config' | 'barbeiros' | 'estoque' | 'marketing'>('agenda');
   const [bookings, setBookings] = useState<Appointment[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>(getTodayDateString()); // Dynamic local date
   const [selectedBarberFilter, setSelectedBarberFilter] = useState<string>('all'); // 'all' or specific ID
@@ -197,6 +201,11 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
   const [isSavingConfig, setIsSavingConfig] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
 
+  // Marketing & QR Code States
+  const [qrColor, setQrColor] = useState('#121214');
+  const [showLogoCenter, setShowLogoCenter] = useState(true);
+  const [qrSize, setQrSize] = useState(300);
+
   // Service Settings States
   const [isAddingService, setIsAddingService] = useState(false);
   const [isEditingService, setIsEditingService] = useState<Service | null>(null);
@@ -217,7 +226,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
 
   // Check for password recovery in URL
   useEffect(() => {
-    if (window.location.hash.includes('recovery=true')) {
+    if (window.location.hash.includes('recovery=true') || window.location.search.includes('recovery=true')) {
       setAuthMode('update_password');
     }
   }, []);
@@ -244,6 +253,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
   const [isBookModalOpen, setIsBookModalOpen] = useState(false);
   const [modalBarberId, setModalBarberId] = useState('');
   const [modalTime, setModalTime] = useState('');
+  const [modalDate, setModalDate] = useState('');
   const [clientName, setClientName] = useState('');
   const [clientPhone, setClientPhone] = useState('');
   const [selectedServiceId, setSelectedServiceId] = useState('');
@@ -386,8 +396,8 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
       setAuthMessage('Senha atualizada com sucesso! Você pode fazer login agora.');
       setAuthMode('login');
       setAuthPassword('');
-      // Limpa a URL hash para evitar prender na tela de update password
-      window.history.replaceState(null, '', window.location.pathname + '#admin');
+      // Limpa a URL e parâmetros para evitar prender na tela de update password
+      window.history.replaceState(null, '', window.location.pathname);
     } catch (err: any) {
       setAuthError(err.message || 'Erro ao atualizar a senha.');
     } finally {
@@ -832,7 +842,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
       clientName,
       clientEmail: `${clientName.toLowerCase().replace(/\s+/g, '')}@example.com`,
       clientPhone: clientPhone || '(11) 99999-9999',
-      date: selectedDate,
+      date: modalDate || selectedDate,
       time: modalTime,
       status: 'Ocupado' as const
     };
@@ -850,6 +860,14 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
   const openQuickBook = (barberId: string, time: string) => {
     setModalBarberId(barberId);
     setModalTime(time);
+    setModalDate(selectedDate);
+    setIsBookModalOpen(true);
+  };
+
+  const openGeneralBook = () => {
+    setModalBarberId(barbers[0]?.id || '');
+    setModalTime(initialAvailableHours[0] || '09:00');
+    setModalDate(selectedDate);
     setIsBookModalOpen(true);
   };
 
@@ -1549,13 +1567,13 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
   }
 
   return (
-    <div className="min-h-screen bg-[#0A0A0B] text-gray-100 flex overflow-hidden">
+    <div className="min-h-screen bg-[#0A0A0B] text-gray-100 flex overflow-hidden print:bg-white print:text-black">
       
       {/* Sidebar de navegação colapsável e moderna */}
       <aside 
         className={`bg-[#0E0E10] border-r border-white/5 flex flex-col justify-between transition-all duration-300 ${
           isSidebarCollapsed ? 'w-20' : 'w-64'
-        } shrink-0`}
+        } shrink-0 print:hidden`}
       >
         <div>
           {/* Sidebar Header */}
@@ -1640,6 +1658,18 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
               {!isSidebarCollapsed && <span>Configurações</span>}
             </button>
 
+            <button
+              onClick={() => setActiveTab('marketing')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 cursor-pointer ${
+                activeTab === 'marketing' 
+                  ? 'bg-amber-500 text-black shadow-[0_4px_15px_rgba(245,158,11,0.15)] font-bold' 
+                  : 'text-gray-400 hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              <QrCode className="w-5 h-5 shrink-0" />
+              {!isSidebarCollapsed && <span>Divulgar QR Code</span>}
+            </button>
+
             <div className="h-px bg-white/5 my-4" />
 
             <button
@@ -1672,15 +1702,16 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
       <main className="flex-1 flex flex-col overflow-hidden">
         
         {/* Top Navbar */}
-        <header className="h-20 border-b border-white/5 px-8 flex items-center justify-between bg-[#0E0E10]/50 shrink-0">
+        <header className="h-20 border-b border-white/5 px-8 flex items-center justify-between bg-[#0E0E10]/50 shrink-0 print:hidden">
           <div>
             <span className="text-xs font-mono text-amber-500/80 uppercase tracking-widest font-semibold">Painel Administrativo</span>
             <h2 className="text-lg font-bold text-white leading-none mt-1">
               {activeTab === 'dashboard' && 'Métricas de Faturamento'}
               {activeTab === 'agenda' && 'Agenda de Atendimento'}
               {activeTab === 'config' && 'Configurações da Barbearia'}
-             {activeTab === 'barbeiros' && 'Gerenciar Barbeiros'}
-             {activeTab === 'estoque' && 'Controle de Estoque & Consumo'}
+              {activeTab === 'barbeiros' && 'Gerenciar Barbeiros'}
+              {activeTab === 'estoque' && 'Controle de Estoque & Consumo'}
+              {activeTab === 'marketing' && 'Divulgar PWA & QR Code'}
             </h2>
           </div>
 
@@ -1706,7 +1737,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
         </header>
 
         {/* Content Scroll Container */}
-        <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6">
+        <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6 print:overflow-visible print:p-0">
           
           {/* API offline or connection notices */}
           {errorMessage && (
@@ -1886,23 +1917,33 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
               {/* Agenda Controls (Date Select, Barber Filter) */}
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[#121215] p-5 rounded-2xl border border-white/5">
                 
-                {/* Date Navigator */}
-                <div className="flex items-center gap-3">
-                  <button 
-                    onClick={() => navigateDate(-1)}
-                    className="p-2.5 rounded-xl bg-black/40 hover:bg-black/80 border border-white/5 text-gray-400 hover:text-white transition-colors"
-                  >
-                    <ChevronLeft className="w-5 h-5" />
-                  </button>
-                  <div className="text-center min-w-[160px]">
-                    <span className="block text-[10px] font-mono text-amber-500 uppercase tracking-widest font-semibold">Data Selecionada</span>
-                    <span className="text-sm font-bold text-white capitalize">{formatDateLabel(selectedDate)}</span>
+                {/* Date Navigator & Actions */}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4 w-full md:w-auto">
+                  <div className="flex items-center gap-3">
+                    <button 
+                      onClick={() => navigateDate(-1)}
+                      className="p-2.5 rounded-xl bg-black/40 hover:bg-black/80 border border-white/5 text-gray-400 hover:text-white transition-colors"
+                    >
+                      <ChevronLeft className="w-5 h-5" />
+                    </button>
+                    <div className="text-center min-w-[160px]">
+                      <span className="block text-[10px] font-mono text-amber-500 uppercase tracking-widest font-semibold">Data Selecionada</span>
+                      <span className="text-sm font-bold text-white capitalize">{formatDateLabel(selectedDate)}</span>
+                    </div>
+                    <button 
+                      onClick={() => navigateDate(1)}
+                      className="p-2.5 rounded-xl bg-black/40 hover:bg-black/80 border border-white/5 text-gray-400 hover:text-white transition-colors"
+                    >
+                      <ChevronRight className="w-5 h-5" />
+                    </button>
                   </div>
-                  <button 
-                    onClick={() => navigateDate(1)}
-                    className="p-2.5 rounded-xl bg-black/40 hover:bg-black/80 border border-white/5 text-gray-400 hover:text-white transition-colors"
+
+                  <button
+                    onClick={openGeneralBook}
+                    className="flex items-center justify-center gap-2 px-5 py-3 bg-amber-500 hover:bg-amber-400 text-black text-xs font-extrabold tracking-wider uppercase rounded-xl transition-all duration-300 shadow-md shadow-amber-500/10 cursor-pointer"
                   >
-                    <ChevronRight className="w-5 h-5" />
+                    <Plus className="w-4 h-4 text-black stroke-[3px]" />
+                    <span>Novo Agendamento</span>
                   </button>
                 </div>
 
@@ -2379,6 +2420,259 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
             </motion.div>
           )}
 
+          {/* TAB: MARKETING & QR CODE */}
+          {activeTab === 'marketing' && activeBarbearia && (
+            <>
+              {/* On-Screen Layout */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="grid grid-cols-1 lg:grid-cols-12 gap-8 pb-12 print:hidden"
+              >
+                {/* Customization Column */}
+                <div className="lg:col-span-5 space-y-6">
+                  <div className="bg-[#121215] p-6 rounded-3xl border border-white/5 space-y-6">
+                    <div>
+                      <h3 className="text-base font-bold text-white flex items-center gap-2">
+                        <QrCode className="w-5 h-5 text-amber-500" />
+                        Personalizar QR Code
+                      </h3>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Personalize as cores e o estilo do seu código de agendamento online.
+                      </p>
+                    </div>
+
+                    {/* Colors */}
+                    <div className="space-y-2">
+                      <label className="block text-[10px] font-mono text-gray-400 uppercase tracking-wider font-semibold">Cor do QR Code</label>
+                      <div className="grid grid-cols-4 gap-2">
+                        {[
+                          { name: 'Preto Premium', value: '#121214', bg: 'bg-[#121214] border border-white/10' },
+                          { name: 'Ouro Amber', value: '#F59E0B', bg: 'bg-amber-500' },
+                          { name: 'Azul Cobalto', value: '#3B82F6', bg: 'bg-blue-500' },
+                          { name: 'Verde Esmeralda', value: '#10B981', bg: 'bg-emerald-500' }
+                        ].map((c) => (
+                          <button
+                            key={c.value}
+                            onClick={() => setQrColor(c.value)}
+                            className={`p-3 rounded-xl flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                              qrColor === c.value 
+                                ? 'ring-2 ring-amber-500 bg-white/5 border-transparent' 
+                                : 'bg-white/2 hover:bg-white/5 border border-white/5'
+                            }`}
+                          >
+                            <span className={`w-6 h-6 rounded-full ${c.bg}`} />
+                            <span className="text-[9px] font-mono font-medium text-gray-300 text-center truncate w-full">{c.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Logo center toggle */}
+                    <div className="space-y-2">
+                      <label className="block text-[10px] font-mono text-gray-400 uppercase tracking-wider font-semibold">Logotipo Central</label>
+                      <div className="flex items-center justify-between p-3 bg-[#131316] border border-white/5 rounded-xl">
+                        <div>
+                          <span className="block text-xs font-semibold text-white">Centralizar Logo</span>
+                          <span className="block text-[10px] text-gray-500 mt-0.5">Mostra a logo da barbearia no centro do QR Code</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowLogoCenter(!showLogoCenter)}
+                          className={`w-12 h-6 rounded-full p-1 transition-colors ${showLogoCenter ? 'bg-amber-500' : 'bg-white/5'}`}
+                        >
+                          <div className={`w-4 h-4 rounded-full bg-black transition-transform ${showLogoCenter ? 'translate-x-6' : 'translate-x-0'}`} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Link Details */}
+                    <div className="space-y-2">
+                      <label className="block text-[10px] font-mono text-gray-400 uppercase tracking-wider font-semibold">Endereço de Destino (Link)</label>
+                      <div className="p-3.5 bg-[#131316] border border-white/5 rounded-xl font-mono text-xs text-amber-500 select-all truncate">
+                        {window.location.origin}/{activeBarbearia.slug || 'sua-barbearia'}
+                      </div>
+                      <span className="text-[10px] text-gray-500 block">Este é o link que os clientes abrirão ao escanear o QR Code.</span>
+                    </div>
+
+                    {/* Instructions */}
+                    <div className="p-4 rounded-2xl bg-amber-500/5 border border-amber-500/10 text-xs text-amber-500/90 space-y-2">
+                      <span className="font-bold block text-sm">💡 Dica de Negócio</span>
+                      <p className="leading-relaxed">
+                        Deixe uma placa com este QR Code no balcão de recepção e nos espelhos dos barbeiros. Incentive os clientes a escanearem para fazer o próximo agendamento em segundos, garantindo sua recorrência.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Preview Column */}
+                <div className="lg:col-span-7 space-y-6">
+                  <div className="bg-[#121215] p-6 rounded-3xl border border-white/5 flex flex-col items-center">
+                    <div className="w-full mb-4">
+                      <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">Visualização da Placa de Balcão</h3>
+                      <p className="text-xs text-gray-400 mt-0.5">Mockup realista do stand acrílico para o balcão da sua barbearia.</p>
+                    </div>
+
+                    {/* Desk Stand Acrylic Mockup */}
+                    <div className="relative w-full max-w-sm aspect-[3/4] bg-[#16161B] rounded-2xl border border-white/10 p-6 flex flex-col items-center justify-between shadow-2xl overflow-hidden group">
+                      {/* Background glow lines */}
+                      <div className="absolute inset-0 bg-gradient-to-b from-amber-500/5 via-transparent to-transparent opacity-50" />
+                      <div className="absolute -inset-10 bg-[radial-gradient(circle_at_center,rgba(245,158,11,0.03),transparent_70%)]" />
+
+                      {/* Acrylic highlight border */}
+                      <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+
+                      {/* Header */}
+                      <div className="w-full text-center z-10 space-y-2">
+                        {activeBarbearia.logo ? (
+                          <img 
+                            src={activeBarbearia.logo} 
+                            alt="Logo" 
+                            className="w-12 h-12 rounded-xl object-cover mx-auto border border-white/10 shadow-lg"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mx-auto text-amber-500">
+                            <Scissors className="w-6 h-6" />
+                          </div>
+                        )}
+                        <div>
+                          <h4 className="text-base font-black text-white uppercase tracking-wider">{activeBarbearia.name}</h4>
+                          <span className="inline-block text-[9px] font-mono bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded-full uppercase tracking-widest font-bold">AGENDAMENTO ONLINE</span>
+                        </div>
+                      </div>
+
+                      {/* QR Code container */}
+                      <div className="p-4 bg-white rounded-3xl shadow-xl border border-white/10 z-10 flex items-center justify-center relative">
+                        <QRCodeCanvas
+                          id="barber-qrcode-canvas"
+                          value={`${window.location.origin}/${activeBarbearia.slug || 'sua-barbearia'}`}
+                          size={180}
+                          bgColor="#FFFFFF"
+                          fgColor={qrColor}
+                          level="H"
+                          includeMargin={true}
+                          imageSettings={
+                            showLogoCenter && activeBarbearia.logo
+                              ? {
+                                  src: activeBarbearia.logo,
+                                  height: 36,
+                                  width: 36,
+                                  excavate: true,
+                                }
+                              : undefined
+                          }
+                        />
+                      </div>
+
+                      {/* Footer Instructions */}
+                      <div className="w-full text-center z-10 space-y-1.5">
+                        <p className="text-xs font-bold text-gray-200">Aponte a câmera do celular para agendar</p>
+                        <p className="text-[10px] text-gray-500 max-w-[240px] mx-auto">Instale nosso aplicativo direto pelo navegador sem ocupar memória.</p>
+                        <span className="block text-[8px] font-mono text-amber-500/70 tracking-wider">PODER DE PARCERIA COM BARBERSFLOW</span>
+                      </div>
+
+                      {/* Desk Stand Base Shadow & Base Reflection Effect */}
+                      <div className="absolute -bottom-1 inset-x-4 h-3 bg-black/60 blur-md rounded-full" />
+                    </div>
+
+                    {/* Actions */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-sm mt-6">
+                      <button
+                        onClick={() => {
+                          const canvas = document.getElementById('barber-qrcode-canvas') as HTMLCanvasElement;
+                          if (canvas) {
+                            const url = canvas.toDataURL('image/png');
+                            const link = document.createElement('a');
+                            link.download = `qrcode-${activeBarbearia.slug || 'barbearia'}.png`;
+                            link.href = url;
+                            link.click();
+                          }
+                        }}
+                        className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs font-bold font-mono transition-all border border-white/5 cursor-pointer"
+                      >
+                        <Download className="w-4 h-4" />
+                        BAIXAR PNG
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          window.print();
+                        }}
+                        className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold font-mono transition-all cursor-pointer"
+                      >
+                        <Printer className="w-4 h-4" />
+                        IMPRIMIR PLACA
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+
+              {/* Printable Placa (Hidden on Screen, Visible on Print Only) */}
+              <div className="hidden print:flex print:flex-col print:items-center print:justify-between print:min-h-screen print:bg-white print:text-black print:p-12 print:text-center print:w-full print:absolute print:inset-0 print:z-[99999] print:font-sans">
+                {/* Outer frame borders for elegant poster look */}
+                <div className="w-full flex-1 border-[16px] border-black p-10 flex flex-col items-center justify-between">
+                  
+                  {/* Print Header */}
+                  <div className="space-y-4">
+                    {activeBarbearia.logo ? (
+                      <img 
+                        src={activeBarbearia.logo} 
+                        alt="Logo" 
+                        className="w-24 h-24 rounded-2xl object-cover mx-auto border-4 border-black"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="w-20 h-20 rounded-2xl border-4 border-black flex items-center justify-center mx-auto text-black">
+                        <Scissors className="w-10 h-10" />
+                      </div>
+                    )}
+                    <div>
+                      <h1 className="text-4xl font-extrabold tracking-tight uppercase">{activeBarbearia.name}</h1>
+                      <div className="h-1 w-24 bg-black mx-auto my-3" />
+                      <span className="text-sm font-bold tracking-widest uppercase text-gray-700">FAÇA SEU AGENDAMENTO ONLINE</span>
+                    </div>
+                  </div>
+
+                  {/* QR Code Container */}
+                  <div className="my-8 p-6 bg-white border-8 border-black rounded-3xl flex items-center justify-center">
+                    <QRCodeCanvas
+                      value={`${window.location.origin}/${activeBarbearia.slug || 'sua-barbearia'}`}
+                      size={320}
+                      bgColor="#FFFFFF"
+                      fgColor="#000000" // Always black for maximum physical scanner contrast
+                      level="H"
+                      includeMargin={true}
+                      imageSettings={
+                        showLogoCenter && activeBarbearia.logo
+                          ? {
+                              src: activeBarbearia.logo,
+                              height: 60,
+                              width: 60,
+                              excavate: true,
+                            }
+                          : undefined
+                      }
+                    />
+                  </div>
+
+                  {/* Print Instructions */}
+                  <div className="space-y-4 max-w-xl">
+                    <h2 className="text-2xl font-bold tracking-tight">Abra a câmera do celular e aponte para o código</h2>
+                    <p className="text-sm text-gray-600 leading-relaxed">
+                      Escaneie o QR Code acima para abrir nosso aplicativo de agendamentos. Escolha seu profissional, serviço e reserve seu horário em segundos!
+                    </p>
+                    <div className="pt-2">
+                      <p className="text-xs font-mono text-gray-400">Powered by BarbersFlow</p>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+            </>
+          )}
+
           {/* TAB 5: INVENTORY CONTROL (ESTOQUE) */}
           {activeTab === 'estoque' && activeBarbearia && (
             <motion.div
@@ -2782,23 +3076,43 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
               <form onSubmit={handleAdminBook} className="space-y-4">
                 <div>
                   <label className="block text-xs font-mono text-gray-400 mb-1.5">PROFISSIONAL</label>
-                  <div className="p-3 bg-white/5 border border-white/5 rounded-xl text-sm font-medium text-gray-200">
-                    {barbers.find(b => b.id === modalBarberId)?.name || 'Profissional'}
-                  </div>
+                  <select
+                    value={modalBarberId}
+                    onChange={(e) => setModalBarberId(e.target.value)}
+                    className="w-full p-3 bg-[#131316] border border-white/10 rounded-xl text-sm text-gray-200 focus:outline-none focus:border-amber-500"
+                  >
+                    {barbers.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name} ({b.role})
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-mono text-gray-400 mb-1.5">DATA</label>
-                    <div className="p-3 bg-white/5 border border-white/5 rounded-xl text-sm font-medium text-gray-200 text-center font-mono">
-                      {selectedDate}
-                    </div>
+                    <input
+                      type="date"
+                      required
+                      value={modalDate}
+                      onChange={(e) => setModalDate(e.target.value)}
+                      className="w-full p-3 bg-[#131316] border border-white/10 rounded-xl text-sm text-gray-200 focus:outline-none focus:border-amber-500 text-center font-mono"
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-mono text-gray-400 mb-1.5">HORÁRIO</label>
-                    <div className="p-3 bg-white/5 border border-white/5 rounded-xl text-sm font-medium text-amber-400 text-center font-mono font-bold">
-                      {modalTime}
-                    </div>
+                    <select
+                      value={modalTime}
+                      onChange={(e) => setModalTime(e.target.value)}
+                      className="w-full p-3 bg-[#131316] border border-white/10 rounded-xl text-sm text-amber-400 font-bold focus:outline-none focus:border-amber-500 text-center font-mono"
+                    >
+                      {initialAvailableHours.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 

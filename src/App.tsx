@@ -32,12 +32,26 @@ export default function App() {
       const { data: { session } } = await supabase.auth.getSession();
       
       if (session?.user) {
-        const { data } = await supabase
-          .from('barbearias')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
-        if (data) handleSetActiveBarbearia(data as Barbearia);
+        // Prevent overwriting activeBarbearia if we are on a custom slug route
+        const pathname = window.location.pathname;
+        const normalizedPath = pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+        
+        if (
+          normalizedPath === '' ||
+          normalizedPath === 'admin' ||
+          normalizedPath === 'pwa' ||
+          normalizedPath === 'superadmin' ||
+          normalizedPath === 'features' ||
+          normalizedPath === 'bento' ||
+          normalizedPath === 'pricing'
+        ) {
+          const { data } = await supabase
+            .from('barbearias')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+          if (data) handleSetActiveBarbearia(data as Barbearia);
+        }
       }
     };
     initSession();
@@ -45,17 +59,33 @@ export default function App() {
     // Listen for auth changes
     const setupAuthListener = async () => {
       const { supabase } = await import('./lib/supabase');
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
         if (!session) {
-          handleSetActiveBarbearia(null);
+          if (event === 'SIGNED_OUT') {
+            handleSetActiveBarbearia(null);
+          }
         } else {
-          // If we have a session but no activeBarbearia, try to fetch it
-          const { data } = await supabase
-            .from('barbearias')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
-          if (data) handleSetActiveBarbearia(data as Barbearia);
+          // Prevent overwriting if we are on a custom slug route
+          const pathname = window.location.pathname;
+          const normalizedPath = pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+          
+          if (
+            normalizedPath === '' ||
+            normalizedPath === 'admin' ||
+            normalizedPath === 'pwa' ||
+            normalizedPath === 'superadmin' ||
+            normalizedPath === 'features' ||
+            normalizedPath === 'bento' ||
+            normalizedPath === 'pricing'
+          ) {
+            // If we have a session but no activeBarbearia, try to fetch it
+            const { data } = await supabase
+              .from('barbearias')
+              .select('*')
+              .eq('id', session.user.id)
+              .single();
+            if (data) handleSetActiveBarbearia(data as Barbearia);
+          }
         }
       });
       return subscription;
@@ -79,68 +109,130 @@ export default function App() {
     }
   };
 
-  // Handle URL hash or direct parameter simulation on first mount if any
+  // Handle URL path/hash or direct parameter simulation on first mount if any
   useEffect(() => {
     const handleNavigation = async () => {
-      const hash = window.location.hash;
       const pathname = window.location.pathname;
+      const hash = window.location.hash;
 
-      if (pathname === '/superadmin') {
+      if (pathname === '/superadmin' || hash === '#superadmin') {
         setCurrentView('superadmin');
         return;
       }
-      
+
+      if (pathname === '/admin' || hash === '#admin') {
+        setCurrentView('admin');
+        return;
+      }
+
+      if (pathname === '/pwa' || hash === '#pwa') {
+        setCurrentView('pwa');
+        return;
+      }
+
+      const normalizedSlug = pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+
       // Check if it's a slug routing (e.g. /barbearia-do-joao)
-      if (pathname.length > 1 && pathname !== '/') {
-        const slug = pathname.substring(1).toLowerCase();
-        
+      if (
+        normalizedSlug.length > 0 && 
+        normalizedSlug !== 'admin' && 
+        normalizedSlug !== 'pwa' && 
+        normalizedSlug !== 'superadmin' &&
+        normalizedSlug !== 'features' &&
+        normalizedSlug !== 'bento' &&
+        normalizedSlug !== 'pricing'
+      ) {
+        // 1. Fast fallback: check memory or localStorage
+        const saved = localStorage.getItem('barbersflow_active_barbearia');
+        let localBarbearia: Barbearia | null = null;
+        if (saved) {
+          try {
+            localBarbearia = JSON.parse(saved);
+          } catch {}
+        }
+
+        if (localBarbearia && localBarbearia.slug && localBarbearia.slug.toLowerCase() === normalizedSlug) {
+          handleSetActiveBarbearia(localBarbearia, false);
+          setCurrentView('pwa');
+          return;
+        }
+
+        if (activeBarbearia && activeBarbearia.slug && activeBarbearia.slug.toLowerCase() === normalizedSlug) {
+          setCurrentView('pwa');
+          return;
+        }
+
+        if (normalizedSlug === 'barbersflow-demo') {
+          const { mockBarbearia } = await import('./lib/db');
+          handleSetActiveBarbearia(mockBarbearia, false);
+          setCurrentView('pwa');
+          return;
+        }
+
+        // 2. Query Supabase
         try {
           const { supabase } = await import('./lib/supabase');
           const { data, error } = await supabase
             .from('barbearias')
             .select('*')
-            .eq('slug', slug)
+            .eq('slug', normalizedSlug)
             .single();
 
           if (data && !error) {
             handleSetActiveBarbearia(data as Barbearia, false);
             setCurrentView('pwa');
           } else {
-            setCurrentView('landing');
+            // Check listing as fallback
+            const { getAllBarbearias } = await import('./lib/db');
+            const all = await getAllBarbearias();
+            const matched = all.find(b => b.slug && b.slug.toLowerCase() === normalizedSlug);
+            if (matched) {
+              handleSetActiveBarbearia(matched, false);
+              setCurrentView('pwa');
+            } else {
+              setCurrentView('landing');
+            }
           }
         } catch (err) {
-          setCurrentView('landing');
+          // Fallback listing check on network/parsing failure
+          try {
+            const { getAllBarbearias } = await import('./lib/db');
+            const all = await getAllBarbearias();
+            const matched = all.find(b => b.slug && b.slug.toLowerCase() === normalizedSlug);
+            if (matched) {
+              handleSetActiveBarbearia(matched, false);
+              setCurrentView('pwa');
+            } else {
+              setCurrentView('landing');
+            }
+          } catch {
+            setCurrentView('landing');
+          }
         }
         return;
       }
 
-      if (hash.startsWith('#admin')) setCurrentView('admin');
-      else if (hash.startsWith('#pwa')) setCurrentView('pwa');
-      else if (hash.startsWith('#superadmin')) setCurrentView('superadmin');
-      else if (hash.startsWith('#landing') || hash === '') setCurrentView('landing');
+      setCurrentView('landing');
     };
     
     handleNavigation();
     
-    const onHashChange = () => {
-      if (window.location.pathname === '/' || window.location.pathname === '') {
-        const hash = window.location.hash;
-        if (hash.startsWith('#admin')) setCurrentView('admin');
-        else if (hash.startsWith('#pwa')) setCurrentView('pwa');
-        else if (hash.startsWith('#superadmin')) setCurrentView('superadmin');
-        else if (hash.startsWith('#landing') || hash === '') setCurrentView('landing');
-      }
+    const onPopState = () => {
+      handleNavigation();
     };
 
-    window.addEventListener('hashchange', onHashChange);
-    return () => window.removeEventListener('hashchange', onHashChange);
+    window.addEventListener('popstate', onPopState);
+    window.addEventListener('hashchange', onPopState);
+    return () => {
+      window.removeEventListener('popstate', onPopState);
+      window.removeEventListener('hashchange', onPopState);
+    };
   }, []);
 
   const handleNavigate = (view: 'landing' | 'admin' | 'pwa' | 'superadmin') => {
     setCurrentView(view);
-    if (view !== 'superadmin' || window.location.pathname !== '/superadmin') {
-      window.location.hash = view;
-    }
+    const path = view === 'landing' ? '/' : `/${view}`;
+    window.history.pushState({}, '', path);
     setIsNavigatorExpanded(false); // Collapses the navigator whenever we change page/view
   };
 
@@ -193,7 +285,12 @@ export default function App() {
                 onNavigate={handleNavigate} 
                 activeBarbearia={activeBarbearia}
                 onSetActiveBarbearia={handleSetActiveBarbearia}
-                isStandalone={window.location.pathname.length > 1 && window.location.pathname !== '/superadmin'}
+                isStandalone={
+                  window.location.pathname.length > 1 && 
+                  window.location.pathname !== '/superadmin' && 
+                  window.location.pathname !== '/admin' && 
+                  window.location.pathname !== '/pwa'
+                }
               />
             </motion.div>
           )}
@@ -218,7 +315,11 @@ export default function App() {
 
       {/* FLOATING DEVELOPER NAVIGATOR (Sleek Social-Media Style Dock) */}
       {(() => {
-        const isStandalonePWA = window.location.pathname.length > 1 && window.location.pathname !== '/superadmin';
+        const isStandalonePWA = 
+          window.location.pathname.length > 1 && 
+          window.location.pathname !== '/superadmin' && 
+          window.location.pathname !== '/admin' && 
+          window.location.pathname !== '/pwa';
         if (currentView === 'pwa' && isStandalonePWA) return null;
 
         const showExpanded = isNavigatorExpanded;

@@ -244,7 +244,7 @@ export async function logoutBarbearia(): Promise<void> {
 // Reset password for barbearia
 export async function resetPasswordForEmail(email: string): Promise<void> {
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${window.location.origin}/#admin&recovery=true`,
+    redirectTo: `${window.location.origin}/admin?recovery=true`,
   });
   if (error) {
     throw new Error(error.message || 'Erro ao enviar email de recuperação.');

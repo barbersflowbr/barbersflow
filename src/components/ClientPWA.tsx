@@ -25,7 +25,8 @@ import {
   Star,
   RefreshCw,
   QrCode,
-  X
+  X,
+  MapPin
 } from 'lucide-react';
 import { initialAvailableHours } from '../data';
 import { Barber, Service, Appointment } from '../types';
@@ -89,8 +90,8 @@ export default function ClientPWA({ onNavigate, activeBarbearia, onSetActiveBarb
   // Days list for the Date Picker
   const dateOptions = generateDateOptions();
 
-  // Stepper Steps: 1 - Service, 2 - Barber, 3 - Date & Time, 4 - Confirm, 5 - Success
-  const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  // Stepper Steps: 0 - Landing, 1 - Service, 2 - Barber, 3 - Date & Time, 4 - Confirm, 5 - Success
+  const [step, setStep] = useState<0 | 1 | 2 | 3 | 4 | 5>(0);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [selectedBarber, setSelectedBarber] = useState<Barber | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>(dateOptions[0]?.fullDate || ''); // YYYY-MM-DD
@@ -108,9 +109,56 @@ export default function ClientPWA({ onNavigate, activeBarbearia, onSetActiveBarb
   const [bookingError, setBookingError] = useState<string | null>(null);
   const [confirmedBooking, setConfirmedBooking] = useState<Appointment | null>(null);
 
-  // PWA simulated install banner
+  // Real PWA installation states & hooks
   const [pwaInstalled, setPwaInstalled] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isIos, setIsIos] = useState(false);
   const [showPwaBanner, setShowPwaBanner] = useState(true);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setShowPwaBanner(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    // Detect iOS devices
+    const userAgent = window.navigator.userAgent.toLowerCase();
+    const isIosDevice = /iphone|ipad|ipod/.test(userAgent);
+    setIsIos(isIosDevice);
+
+    // Check if running in standalone mode (installed as PWA)
+    const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
+    if (isStandaloneMode) {
+      setPwaInstalled(true);
+    }
+
+    // Default banner visibility
+    const isMobile = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent);
+    setShowPwaBanner(isMobile && !isStandaloneMode);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      console.log(`[PWA] PWA Install Prompt user choice: ${outcome}`);
+      if (outcome === 'accepted') {
+        setPwaInstalled(true);
+      }
+      setDeferredPrompt(null);
+    } else if (isIos) {
+      alert('Para instalar no seu iPhone:\n\n1. Toque no botão de "Compartilhar" (ícone com seta para cima)\n2. Role a lista e toque em "Adicionar à Tela de Início"\n3. Confirme clicando em "Adicionar" no canto superior direito.');
+    } else {
+      alert('Para instalar o aplicativo:\n\nToque no ícone de menu do seu navegador (três pontinhos no canto superior) e selecione "Instalar aplicativo" ou "Adicionar à tela inicial".');
+    }
+  };
 
   // Category filter for step 1
   const [activeCategory, setActiveCategory] = useState<'Todos' | 'Cabelo' | 'Barba' | 'Combo' | 'Tratamento'>('Todos');
@@ -122,17 +170,26 @@ export default function ClientPWA({ onNavigate, activeBarbearia, onSetActiveBarb
     if (!activeBarbearia) {
       const loadDefaultBarbearia = async () => {
         try {
-          const { getAllBarbearias } = await import('../lib/db');
+          const { getAllBarbearias, mockBarbearia } = await import('../lib/db');
           const list = await getAllBarbearias();
+          let onboarded = null;
           if (list && list.length > 0) {
             // Find a barbearia that is fully onboarded and has both barbers and services
-            const onboarded = list.find(b => b.isOnboarded && b.barbers && b.barbers.length > 0 && b.services && b.services.length > 0);
-            if (onboarded) {
-              onSetActiveBarbearia(onboarded);
-            }
+            onboarded = list.find(b => b.isOnboarded && b.barbers && b.barbers.length > 0 && b.services && b.services.length > 0);
+          }
+          if (onboarded) {
+            onSetActiveBarbearia(onboarded);
+          } else {
+            onSetActiveBarbearia(mockBarbearia);
           }
         } catch (err) {
           console.warn('Could not load database barbearias:', err);
+          try {
+            const { mockBarbearia } = await import('../lib/db');
+            onSetActiveBarbearia(mockBarbearia);
+          } catch (mockErr) {
+            console.error('Failed to load mockBarbearia:', mockErr);
+          }
         } finally {
           setIsLoading(false);
         }
@@ -229,7 +286,7 @@ export default function ClientPWA({ onNavigate, activeBarbearia, onSetActiveBarb
     setClientName('');
     setClientEmail('');
     setClientPhone('');
-    setStep(1);
+    setStep(0);
     setBookingError(null);
   };
 
@@ -270,7 +327,7 @@ export default function ClientPWA({ onNavigate, activeBarbearia, onSetActiveBarb
   }
 
   const pwaContent = (
-    <div className={`relative w-full ${isStandalone ? 'max-w-md min-h-[100dvh] mx-auto rounded-none border-none shadow-none' : 'max-w-[340px] h-[670px] rounded-[48px] border-[8px] shadow-2xl'} bg-[#111113] border-[#1F1F23] overflow-hidden flex flex-col shrink-0`}>
+    <div className={`relative w-full ${isStandalone ? 'max-w-5xl lg:max-w-6xl min-h-screen mx-auto rounded-none border-none shadow-none bg-[#0E0E10]' : 'max-w-[340px] h-[670px] rounded-[48px] border-[8px] border-[#1F1F23] bg-[#111113] shadow-2xl'} overflow-hidden flex flex-col shrink-0`}>
         {/* iPhone Speaker Notch */}
         {!isStandalone && (
           <div className="hidden md:flex absolute top-0 left-1/2 -translate-x-1/2 w-40 h-7 bg-gray-800 rounded-b-3xl z-40 items-center justify-center">
@@ -310,7 +367,7 @@ export default function ClientPWA({ onNavigate, activeBarbearia, onSetActiveBarb
             </div>
             <div className="flex items-center gap-2">
               <button 
-                onClick={() => setPwaInstalled(true)}
+                onClick={handleInstallClick}
                 className="px-2.5 py-1 bg-amber-500 text-black text-[10px] font-bold rounded-lg hover:bg-amber-400 transition-colors flex items-center gap-1 cursor-pointer"
               >
                 <Download className="w-3 h-3" />
@@ -322,47 +379,50 @@ export default function ClientPWA({ onNavigate, activeBarbearia, onSetActiveBarb
             </div>
           </motion.div>
         )}
-
         {/* PWA App Navigation Header */}
-        <header className="px-5 py-4 flex items-center justify-between border-b border-white/5 bg-[#121215]/80 shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500 overflow-hidden shrink-0">
-              {activeBarbearia?.logo ? (
-                <img src={activeBarbearia.logo} alt="Logo" className="w-full h-full object-cover" />
-              ) : (
-                <Scissors className="w-4.5 h-4.5" />
-              )}
+        <header className="px-5 py-4 border-b border-white/5 bg-[#121215]/80 shrink-0">
+          <div className={`flex items-center justify-between w-full ${isStandalone ? 'max-w-5xl lg:max-w-6xl mx-auto px-1 md:px-4' : ''}`}>
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500 overflow-hidden shrink-0">
+                {activeBarbearia?.logo ? (
+                  <img src={activeBarbearia.logo} alt="Logo" className="w-full h-full object-cover" />
+                ) : (
+                  <Scissors className="w-4.5 h-4.5" />
+                )}
+              </div>
+              <div className="text-left">
+                <span className="block text-[8px] font-mono text-amber-500 tracking-wider uppercase font-bold truncate max-w-[140px]">{activeBarbearia?.name || 'Sua Barbearia'}</span>
+                <h1 className="text-xs font-bold text-white leading-none mt-0.5">Agendamento</h1>
+              </div>
             </div>
-            <div className="text-left">
-              <span className="block text-[8px] font-mono text-amber-500 tracking-wider uppercase font-bold truncate max-w-[140px]">{activeBarbearia?.name || 'Sua Barbearia'}</span>
-              <h1 className="text-xs font-bold text-white leading-none mt-0.5">Agendamento</h1>
-            </div>
+            {step > 0 && step < 5 && (
+              <button 
+                onClick={() => setStep((prev) => (prev - 1) as any)}
+                className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 text-[10px] font-semibold flex items-center gap-1 transition-all cursor-pointer"
+              >
+                <ChevronLeft className="w-3 h-3" />
+                Voltar
+              </button>
+            )}
           </div>
-          {step > 1 && step < 5 && (
-            <button 
-              onClick={() => setStep((prev) => (prev - 1) as any)}
-              className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 text-[10px] font-semibold flex items-center gap-1 transition-all cursor-pointer"
-            >
-              <ChevronLeft className="w-3 h-3" />
-              Voltar
-            </button>
-          )}
         </header>
 
         {/* STEPPER PROGRESS BAR */}
-        {step < 5 && (
-          <div className="px-5 py-2 bg-[#121215]/40 flex items-center justify-between text-[10px] font-mono border-b border-white/5 shrink-0 select-none">
-            <span className="text-gray-500 uppercase tracking-widest font-bold">Progresso</span>
-            <div className="flex items-center gap-1.5">
-              {[1, 2, 3, 4].map((s) => (
-                <div 
-                  key={s} 
-                  className={`w-4.5 h-1 rounded-full transition-all duration-300 ${
-                    step >= s ? 'bg-amber-500' : 'bg-gray-800'
-                  }`} 
-                />
-              ))}
-              <span className="text-amber-500 font-bold ml-1.5">P{step}</span>
+        {step > 0 && step < 5 && (
+          <div className="px-5 py-2 bg-[#121215]/40 border-b border-white/5 shrink-0 select-none">
+            <div className={`flex items-center justify-between w-full ${isStandalone ? 'max-w-5xl lg:max-w-6xl mx-auto px-1 md:px-4' : ''} text-[10px] font-mono`}>
+              <span className="text-gray-500 uppercase tracking-widest font-bold">Progresso</span>
+              <div className="flex items-center gap-1.5">
+                {[1, 2, 3, 4].map((s) => (
+                  <div 
+                    key={s} 
+                    className={`w-4.5 h-1 rounded-full transition-all duration-300 ${
+                      step >= s ? 'bg-amber-500' : 'bg-gray-800'
+                    }`} 
+                  />
+                ))}
+                <span className="text-amber-500 font-bold ml-1.5">P{step}</span>
+              </div>
             </div>
           </div>
         )}
@@ -379,7 +439,191 @@ export default function ClientPWA({ onNavigate, activeBarbearia, onSetActiveBarb
           )}
 
           <AnimatePresence mode="wait">
-            
+             {/* PASSO 0: LANDING DA BARBEARIA */}
+            {step === 0 && (
+              <motion.div 
+                key="step0"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                transition={{ duration: 0.3 }}
+                className="flex flex-col gap-6 text-left pb-6"
+              >
+                {/* Under standalone view, we render a beautiful responsive grid of details */}
+                <div className={`grid grid-cols-1 ${isStandalone ? 'lg:grid-cols-12' : ''} gap-6`}>
+                  
+                  {/* Left Column: Cover Banner and Information */}
+                  <div className={`${isStandalone ? 'lg:col-span-7' : ''} flex flex-col gap-5`}>
+                    {/* Hero Banner Card */}
+                    <div className="relative h-48 md:h-64 lg:h-72 rounded-2xl overflow-hidden border border-white/5 shadow-2xl shrink-0">
+                      <img 
+                        src="https://images.unsplash.com/photo-1585747860715-2ba37e788b70?w=1000&auto=format&fit=crop&q=80" 
+                        alt="Barbearia Padrão" 
+                        className="w-full h-full object-cover brightness-[0.35] scale-105 hover:scale-110 transition-transform duration-700"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-[#0E0E10] via-transparent to-transparent" />
+                      
+                      {/* Status Indicator */}
+                      <div className="absolute top-3 left-3 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full flex items-center gap-1.5 backdrop-blur-md">
+                        <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping" />
+                        <span className="text-[9px] font-mono font-extrabold text-emerald-400 uppercase tracking-widest">Aberto</span>
+                      </div>
+
+                      {/* Rating Badge */}
+                      <div className="absolute top-3 right-3 bg-black/40 border border-white/5 px-2.5 py-1 rounded-lg flex items-center gap-1 backdrop-blur-md text-[10px] font-mono">
+                        <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                        <span className="font-extrabold text-white">4.9</span>
+                      </div>
+
+                      {/* Identity Header overlay */}
+                      <div className="absolute bottom-5 left-5 right-5 flex items-center gap-4">
+                        <div className="w-14 h-14 md:w-16 md:h-16 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 overflow-hidden shrink-0 shadow-lg backdrop-blur-sm">
+                          {activeBarbearia?.logo ? (
+                            <img src={activeBarbearia.logo} alt="Logo" className="w-full h-full object-cover" />
+                          ) : (
+                            <Scissors className="w-6 h-6 text-amber-500" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <h2 className="text-lg md:text-2xl font-extrabold text-white tracking-tight truncate leading-tight">
+                            {activeBarbearia?.name}
+                          </h2>
+                          <span className="text-[11px] md:text-xs text-gray-400 font-light flex items-center gap-1 mt-1 font-mono">
+                            <MapPin className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                            <span className="truncate">{activeBarbearia?.location || 'Localização Premium'}</span>
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* About / Welcome Segment */}
+                    <div className="bg-white/[0.01] border border-white/5 rounded-2xl p-5">
+                      <h3 className="text-xs font-bold text-amber-500 uppercase tracking-widest font-mono">Boas-vindas</h3>
+                      <p className="text-xs md:text-sm text-gray-400 font-light leading-relaxed mt-2.5">
+                        Cortes modernos, barbas alinhadas à toalha quente e uma experiência única de autocuidado masculino. O padrão de qualidade que você merece para elevar sua autoimagem.
+                      </p>
+                    </div>
+
+                    {/* Contacts & Horários cards */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="p-4 bg-white/[0.02] border border-white/5 rounded-xl text-left">
+                        <span className="text-[9px] text-gray-500 font-mono block uppercase tracking-wider">HORÁRIOS</span>
+                        <span className="text-xs text-white font-medium block mt-1.5 leading-relaxed">
+                          Seg a Sáb<br/>
+                          09:00 às 20:00
+                        </span>
+                      </div>
+                      <div className="p-4 bg-white/[0.02] border border-white/5 rounded-xl text-left flex flex-col justify-between">
+                        <div>
+                          <span className="text-[9px] text-gray-500 font-mono block uppercase tracking-wider">CONTATO</span>
+                          <span className="text-xs text-white font-medium block mt-1 truncate">
+                            {activeBarbearia?.phone || 'WhatsApp da Casa'}
+                          </span>
+                        </div>
+                        {activeBarbearia?.phone && (
+                          <a 
+                            href={`https://wa.me/${activeBarbearia.phone.replace(/\D/g, '')}?text=Ol%C3%A1%2C%20gostaria%20de%20tirar%20uma%20d%C3%BAvida%20sobre%20os%20hor%C3%A1rios.`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[10px] text-amber-500 hover:text-amber-400 font-bold flex items-center gap-1 mt-3 font-mono uppercase"
+                          >
+                            Conversar
+                            <ChevronRight className="w-3 h-3" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Column: Actions (CTA, Barbers & Services List) */}
+                  <div className={`${isStandalone ? 'lg:col-span-5' : ''} flex flex-col gap-5`}>
+                    
+                    {/* Master Action */}
+                    <div className="bg-white/[0.01] border border-white/5 rounded-2xl p-5 flex flex-col gap-3">
+                      <span className="text-[9px] text-amber-500 font-mono block uppercase tracking-wider text-center">Fazer Reserva</span>
+                      <button
+                        onClick={() => setStep(1)}
+                        className="w-full py-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-extrabold tracking-wider uppercase flex items-center justify-center gap-2 shadow-[0_4px_25px_rgba(245,158,11,0.25)] hover:scale-[1.01] active:scale-[0.99] transition-all cursor-pointer"
+                      >
+                        <Scissors className="w-4.5 h-4.5 text-black stroke-[3px]" />
+                        <span>Agendar Online Agora</span>
+                      </button>
+                    </div>
+
+                    {/* Grid of Professionals with Quick Link */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xs font-bold text-white uppercase tracking-widest font-mono">Profissionais</h3>
+                        <span className="text-[9px] text-gray-500 font-mono">Toque para agendar</span>
+                      </div>
+
+                      <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
+                        {barbers.length === 0 ? (
+                          <p className="text-[10px] text-gray-500 italic">Nenhum profissional cadastrado.</p>
+                        ) : (
+                          barbers.map((barber) => (
+                            <div 
+                              key={barber.id}
+                              onClick={() => {
+                                setSelectedBarber(barber);
+                                setStep(1); // Jump to select service
+                              }}
+                              className="flex flex-col items-center p-3.5 bg-white/[0.02] border border-white/5 hover:border-amber-500/30 hover:bg-amber-500/5 rounded-xl min-w-[105px] text-center transition-all duration-300 cursor-pointer shrink-0"
+                            >
+                              <img 
+                                src={barber.avatar} 
+                                alt={barber.name} 
+                                className="w-12 h-12 rounded-full object-cover border border-white/10"
+                              />
+                              <span className="text-xs font-bold text-white mt-2 truncate w-full">{barber.name}</span>
+                              <span className="text-[9px] text-amber-500/80 font-mono block truncate w-full mt-1">{barber.role}</span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Popular Services Shortcuts */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xs font-bold text-white uppercase tracking-widest font-mono">Serviços Disponíveis</h3>
+                        <span className="text-[9px] text-gray-500 font-mono">Toque para escolher</span>
+                      </div>
+
+                      <div className="flex flex-col gap-2.5">
+                        {services.length === 0 ? (
+                          <p className="text-[10px] text-gray-500 italic">Nenhum serviço cadastrado.</p>
+                        ) : (
+                          services.slice(0, 3).map((service) => (
+                            <div 
+                              key={service.id}
+                              onClick={() => {
+                                setSelectedService(service);
+                                setStep(2); // Set service and jump to choose barber
+                              }}
+                              className="p-4 rounded-xl bg-white/[0.02] hover:bg-amber-500/[0.04] border border-white/5 hover:border-amber-500/20 flex items-center justify-between transition-all duration-300 cursor-pointer text-xs"
+                            >
+                              <div className="text-left">
+                                <span className="text-[8px] font-mono text-amber-500 uppercase tracking-wider bg-amber-500/5 px-1.5 py-0.5 rounded">
+                                  {service.category}
+                                </span>
+                                <h4 className="font-bold text-white mt-2">{service.name}</h4>
+                                <span className="text-[9px] text-gray-500 flex items-center gap-1 mt-1 font-mono">
+                                  <Clock className="w-3.5 h-3.5 text-amber-500/50" /> {service.duration} min
+                                </span>
+                              </div>
+                              <span className="font-mono font-extrabold text-amber-400 text-sm">R$ {service.price}</span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
             {/* PASSO 1: SELECIONAR SERVIÇO */}
             {step === 1 && (
               <motion.div 
@@ -412,7 +656,7 @@ export default function ClientPWA({ onNavigate, activeBarbearia, onSetActiveBarb
                 </div>
 
                 {/* Services Cards List */}
-                <div className="flex flex-col gap-2.5">
+                <div className={`grid grid-cols-1 ${isStandalone ? 'md:grid-cols-2 lg:grid-cols-3' : ''} gap-4`}>
                   {filteredServices.map((service) => {
                     const isSelected = selectedService?.id === service.id;
                     return (
@@ -421,10 +665,13 @@ export default function ClientPWA({ onNavigate, activeBarbearia, onSetActiveBarb
                         onClick={() => setSelectedService(service)}
                         className={`p-4 rounded-2xl border transition-all duration-300 cursor-pointer relative overflow-hidden flex flex-col justify-between ${
                           isSelected 
-                            ? 'bg-amber-500/10 border-amber-500 shadow-[0_4px_15px_rgba(245,158,11,0.05)]' 
+                            ? 'bg-amber-500/10 border-amber-500 shadow-[0_4px_15px_rgba(245,158,11,0.05)] pl-5' 
                             : 'bg-white/[0.03] border-white/5 hover:border-white/10'
                         }`}
                       >
+                        {isSelected && (
+                          <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-amber-500" />
+                        )}
                         <div className="flex justify-between items-start gap-2">
                           <div>
                             <span className="text-[8px] font-mono font-bold text-amber-500 uppercase tracking-widest bg-amber-500/5 px-1.5 py-0.5 rounded">
@@ -483,7 +730,7 @@ export default function ClientPWA({ onNavigate, activeBarbearia, onSetActiveBarb
                   <p className="text-[10px] text-gray-400 font-light mt-0.5">Nossos mestres visagistas prontos para te atender.</p>
                 </div>
 
-                <div className="flex flex-col gap-3">
+                <div className={`grid grid-cols-1 ${isStandalone ? 'md:grid-cols-2 lg:grid-cols-3' : ''} gap-4`}>
                   {barbers.filter(b => b.assignedServices.includes(selectedService?.id || '')).map((barber) => {
                     const isSelected = selectedBarber?.id === barber.id;
                     return (
@@ -492,10 +739,13 @@ export default function ClientPWA({ onNavigate, activeBarbearia, onSetActiveBarb
                         onClick={() => setSelectedBarber(barber)}
                         className={`p-4 rounded-2xl border transition-all duration-300 cursor-pointer relative overflow-hidden flex items-center gap-4 ${
                           isSelected 
-                            ? 'bg-amber-500/10 border-amber-500 shadow-[0_4px_15px_rgba(245,158,11,0.05)]' 
+                            ? 'bg-amber-500/10 border-amber-500 shadow-[0_4px_15px_rgba(245,158,11,0.05)] pl-5' 
                             : 'bg-white/[0.03] border-white/5 hover:border-white/10'
                         }`}
                       >
+                        {isSelected && (
+                          <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-amber-500" />
+                        )}
                         <img 
                           className="w-14 h-14 rounded-full object-cover border border-white/10 shrink-0" 
                           src={barber.avatar} 
@@ -615,7 +865,7 @@ export default function ClientPWA({ onNavigate, activeBarbearia, onSetActiveBarb
                       <span>Validando disponibilidade via API...</span>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-3 gap-2.5">
+                    <div className={`grid grid-cols-3 ${isStandalone ? 'sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8' : ''} gap-2.5`}>
                       {(() => {
                         const slots = selectedBarber && selectedBarber.workingHours
                           ? generateTimeSlots(
@@ -686,98 +936,102 @@ export default function ClientPWA({ onNavigate, activeBarbearia, onSetActiveBarb
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
-                className="flex flex-col gap-4 text-left"
+                className="flex flex-col gap-5 text-left"
               >
                 <div>
                   <h3 className="text-sm font-bold text-white tracking-wide">Dados de Confirmação</h3>
                   <p className="text-[10px] text-gray-400 font-light mt-0.5">Preencha seus dados para receber o lembrete de confirmação via WhatsApp.</p>
                 </div>
 
-                {/* Review selection details card */}
-                <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-3 text-xs font-light">
-                  <div className="flex items-center gap-2.5">
-                    <Scissors className="w-4 h-4 text-amber-500" />
-                    <div>
-                      <span className="text-[10px] text-gray-500 font-mono block">SERVIÇO</span>
-                      <span className="font-bold text-white">{selectedService?.name} (R$ {selectedService?.price})</span>
+                <div className={`grid grid-cols-1 ${isStandalone ? 'md:grid-cols-2' : ''} gap-5 items-start`}>
+                  {/* Review selection details card */}
+                  <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/5 space-y-4 text-xs font-light">
+                    <span className="text-[10px] font-mono font-bold text-amber-500 uppercase tracking-widest block border-b border-white/5 pb-2">Resumo da Reserva</span>
+                    
+                    <div className="flex items-center gap-3">
+                      <Scissors className="w-5 h-5 text-amber-500 shrink-0" />
+                      <div>
+                        <span className="text-[10px] text-gray-500 font-mono block">SERVIÇO</span>
+                        <span className="font-bold text-white text-sm">{selectedService?.name} (R$ {selectedService?.price})</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 border-t border-white/5 pt-3">
+                      <User className="w-5 h-5 text-amber-500 shrink-0" />
+                      <div>
+                        <span className="text-[10px] text-gray-500 font-mono block">BARBEIRO</span>
+                        <span className="font-bold text-white text-sm">{selectedBarber?.name}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 border-t border-white/5 pt-3">
+                      <Calendar className="w-5 h-5 text-amber-500 shrink-0" />
+                      <div>
+                        <span className="text-[10px] text-gray-500 font-mono block">HORÁRIO DE AGENDA</span>
+                        <span className="font-bold text-white font-mono text-sm">
+                          {selectedDate.split('-').reverse().join('/')} às <span className="text-amber-400 font-bold">{selectedTime}</span>
+                        </span>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2.5 border-t border-white/5 pt-2.5">
-                    <User className="w-4 h-4 text-amber-500" />
+                  <form onSubmit={handleConfirmBooking} className="space-y-4">
                     <div>
-                      <span className="text-[10px] text-gray-500 font-mono block">BARBEIRO</span>
-                      <span className="font-bold text-white">{selectedBarber?.name}</span>
+                      <label className="block text-[10px] font-mono text-gray-500 mb-1 tracking-wider">NOME COMPLETO</label>
+                      <input
+                        type="text"
+                        required
+                        value={clientName}
+                        onChange={(e) => setClientName(e.target.value)}
+                        placeholder="Ex: Gabriel Silva"
+                        className="w-full p-3.5 bg-white/[0.03] border border-white/5 rounded-xl text-xs text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/20 transition-all font-medium"
+                      />
                     </div>
-                  </div>
 
-                  <div className="flex items-center gap-2.5 border-t border-white/5 pt-2.5">
-                    <Calendar className="w-4 h-4 text-amber-500" />
                     <div>
-                      <span className="text-[10px] text-gray-500 font-mono block">HORÁRIO DE AGENDA</span>
-                      <span className="font-bold text-white font-mono">
-                        {selectedDate.split('-').reverse().join('/')} às <span className="text-amber-400 font-bold">{selectedTime}</span>
-                      </span>
+                      <label className="block text-[10px] font-mono text-gray-500 mb-1 tracking-wider">E-MAIL (OPCIONAL)</label>
+                      <input
+                        type="email"
+                        value={clientEmail}
+                        onChange={(e) => setClientEmail(e.target.value)}
+                        placeholder="Ex: seuemail@gmail.com"
+                        className="w-full p-3.5 bg-white/[0.03] border border-white/5 rounded-xl text-xs text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/20 transition-all font-medium"
+                      />
                     </div>
-                  </div>
+
+                    <div>
+                      <label className="block text-[10px] font-mono text-gray-500 mb-1 tracking-wider">WHATSAPP / CELULAR</label>
+                      <input
+                        type="tel"
+                        required
+                        value={clientPhone}
+                        onChange={(e) => setClientPhone(e.target.value)}
+                        placeholder="Ex: (11) 98888-7777"
+                        className="w-full p-3.5 bg-white/[0.03] border border-white/5 rounded-xl text-xs text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/20 transition-all font-medium"
+                      />
+                    </div>
+
+                    <div className="pt-3">
+                      <button
+                        type="submit"
+                        disabled={isSubmitting}
+                        className="w-full py-4 rounded-xl bg-amber-500 text-black text-xs font-extrabold tracking-wider flex items-center justify-center gap-2 shadow-[0_4px_25px_rgba(245,158,11,0.25)] hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-all"
+                      >
+                        {isSubmitting ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            Finalizando reserva...
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="w-4.5 h-4.5" />
+                            Confirmar Agendamento Premium
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
                 </div>
-
-                <form onSubmit={handleConfirmBooking} className="space-y-3.5">
-                  <div>
-                    <label className="block text-[10px] font-mono text-gray-500 mb-1">NOME COMPLETO</label>
-                    <input
-                      type="text"
-                      required
-                      value={clientName}
-                      onChange={(e) => setClientName(e.target.value)}
-                      placeholder="Ex: Gabriel Silva"
-                      className="w-full p-3.5 bg-white/[0.03] border border-white/5 rounded-xl text-xs text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/20 transition-all font-medium"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-mono text-gray-500 mb-1">E-MAIL (OPCIONAL)</label>
-                    <input
-                      type="email"
-                      value={clientEmail}
-                      onChange={(e) => setClientEmail(e.target.value)}
-                      placeholder="Ex: seuemail@gmail.com"
-                      className="w-full p-3.5 bg-white/[0.03] border border-white/5 rounded-xl text-xs text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/20 transition-all font-medium"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-mono text-gray-500 mb-1">WHATSAPP / CELULAR</label>
-                    <input
-                      type="tel"
-                      required
-                      value={clientPhone}
-                      onChange={(e) => setClientPhone(e.target.value)}
-                      placeholder="Ex: (11) 98888-7777"
-                      className="w-full p-3.5 bg-white/[0.03] border border-white/5 rounded-xl text-xs text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/20 transition-all font-medium"
-                    />
-                  </div>
-
-                  <div className="pt-4">
-                    <button
-                      type="submit"
-                      disabled={isSubmitting}
-                      className="w-full py-4 rounded-xl bg-amber-500 text-black text-xs font-extrabold tracking-wider flex items-center justify-center gap-2 shadow-[0_4px_25px_rgba(245,158,11,0.25)] hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                    >
-                      {isSubmitting ? (
-                        <>
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                          Finalizando reserva...
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle2 className="w-4.5 h-4.5" />
-                          Confirmar Agendamento Premium
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </form>
               </motion.div>
             )}
 
@@ -787,7 +1041,7 @@ export default function ClientPWA({ onNavigate, activeBarbearia, onSetActiveBarb
                 key="step5"
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="flex flex-col gap-5 text-center py-4"
+                className="flex flex-col gap-5 text-center py-4 max-w-md mx-auto w-full"
               >
                 <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mx-auto">
                   <Check className="w-8 h-8 font-extrabold" />

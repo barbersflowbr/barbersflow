@@ -33,12 +33,40 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
   const [activeModal, setActiveModal] = useState<'policies' | 'terms' | null>(null);
   const [isWhatsAppGray, setIsWhatsAppGray] = useState(false);
 
+  const handleSectionClick = (e: React.MouseEvent<HTMLAnchorElement>, path: string, targetId: string) => {
+    e.preventDefault();
+    window.history.pushState({}, '', path);
+    const element = document.getElementById(targetId);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
   useEffect(() => {
     const timer = setTimeout(() => {
       setIsWhatsAppGray(true);
     }, 5000); // 5 segundos
 
     return () => clearTimeout(timer);
+  }, []);
+
+  // Smooth scroll to section if URL has path on mount or back/forward navigation
+  useEffect(() => {
+    const handleUrlScroll = () => {
+      const pathname = window.location.pathname;
+      const targetId = pathname === '/features' ? 'features' : pathname === '/bento' ? 'bento' : pathname === '/pricing' ? 'pricing' : null;
+      if (targetId) {
+        // Delay slightly to allow the DOM to fully render/transition
+        setTimeout(() => {
+          document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth' });
+        }, 150);
+      }
+    };
+
+    handleUrlScroll();
+
+    window.addEventListener('popstate', handleUrlScroll);
+    return () => window.removeEventListener('popstate', handleUrlScroll);
   }, []);
 
   return (
@@ -64,9 +92,27 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-gray-400">
-            <a href="#features" className="hover:text-amber-500 transition-colors">Funcionalidades</a>
-            <a href="#bento" className="hover:text-amber-500 transition-colors">Diferenciais</a>
-            <a href="#pricing" className="hover:text-amber-500 transition-colors">Preços</a>
+            <a 
+              href="/features" 
+              onClick={(e) => handleSectionClick(e, '/features', 'features')}
+              className="hover:text-amber-500 transition-colors"
+            >
+              Funcionalidades
+            </a>
+            <a 
+              href="/bento" 
+              onClick={(e) => handleSectionClick(e, '/bento', 'bento')}
+              className="hover:text-amber-500 transition-colors"
+            >
+              Diferenciais
+            </a>
+            <a 
+              href="/pricing" 
+              onClick={(e) => handleSectionClick(e, '/pricing', 'pricing')}
+              className="hover:text-amber-500 transition-colors"
+            >
+              Preços
+            </a>
             <button 
               onClick={() => onNavigate('pwa')} 
               className="hover:text-amber-500 transition-colors text-amber-500/90 font-semibold"
@@ -128,22 +174,31 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
                 className="md:hidden absolute top-20 left-0 w-full bg-[#0E0E10]/95 backdrop-blur-md border-b border-white/5 px-6 py-8 flex flex-col gap-6 z-50"
               >
                 <a 
-                  href="#features" 
-                  onClick={() => setMobileMenuOpen(false)}
+                  href="/features" 
+                  onClick={(e) => {
+                    setMobileMenuOpen(false);
+                    handleSectionClick(e, '/features', 'features');
+                  }}
                   className="text-lg text-gray-300 hover:text-amber-500 transition-colors"
                 >
                   Funcionalidades
                 </a>
                 <a 
-                  href="#bento" 
-                  onClick={() => setMobileMenuOpen(false)}
+                  href="/bento" 
+                  onClick={(e) => {
+                    setMobileMenuOpen(false);
+                    handleSectionClick(e, '/bento', 'bento');
+                  }}
                   className="text-lg text-gray-300 hover:text-amber-500 transition-colors"
                 >
                   Diferenciais
                 </a>
                 <a 
-                  href="#pricing" 
-                  onClick={() => setMobileMenuOpen(false)}
+                  href="/pricing" 
+                  onClick={(e) => {
+                    setMobileMenuOpen(false);
+                    handleSectionClick(e, '/pricing', 'pricing');
+                  }}
                   className="text-lg text-gray-300 hover:text-amber-500 transition-colors"
                 >
                   Preços

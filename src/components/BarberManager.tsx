@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Barber, Service, Appointment } from '../types';
 import { updateBarbearia } from '../lib/db';
 import { Plus, Trash, Clock, Scissors, Edit, Save, X, Calendar, Settings, Sparkles, Users } from 'lucide-react';
+import ImageUploader from './ImageUploader';
 
 interface BarberManagerProps {
   barbeariaId: string;
@@ -20,6 +21,7 @@ export default function BarberManager({ barbeariaId, barbers, services, bookings
   const [isAddingBarber, setIsAddingBarber] = useState(false);
   const [newBarberName, setNewBarberName] = useState('');
   const [newBarberRole, setNewBarberRole] = useState('');
+  const [newBarberAvatar, setNewBarberAvatar] = useState('');
   const [addError, setAddError] = useState<string | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
   const [selectedClientEmail, setSelectedClientEmail] = useState<string>('');
@@ -31,6 +33,7 @@ export default function BarberManager({ barbeariaId, barbers, services, bookings
     setIsAddingBarber(false);
     setNewBarberName('');
     setNewBarberRole('');
+    setNewBarberAvatar('');
     setAddError(null);
     setEditError(null);
     setSelectedClientEmail('');
@@ -86,7 +89,7 @@ export default function BarberManager({ barbeariaId, barbers, services, bookings
       id: Date.now().toString(),
       name: newBarberName,
       role: newBarberRole,
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&h=150&fit=crop',
+      avatar: newBarberAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&h=150&fit=crop',
       rating: 5.0,
       reviews: 0,
       specialties: [],
@@ -101,6 +104,7 @@ export default function BarberManager({ barbeariaId, barbers, services, bookings
     await updateBarbearia(barbeariaId, { barbers: [...barbers, newBarber] });
     setNewBarberName('');
     setNewBarberRole('');
+    setNewBarberAvatar('');
     setIsAddingBarber(false);
     onUpdate();
   };
@@ -276,6 +280,16 @@ export default function BarberManager({ barbeariaId, barbers, services, bookings
                 />
               </div>
 
+              <div>
+                <ImageUploader 
+                  currentImageUrl={newBarberAvatar}
+                  onUploadSuccess={(url) => setNewBarberAvatar(url)}
+                  label="Foto de Perfil"
+                  aspectRatio="square"
+                />
+                <span className="text-[10px] text-gray-500 mt-1.5 block">Faça upload de uma foto quadrada para o perfil do profissional.</span>
+              </div>
+
               <div className="pt-4 flex gap-3">
                 <button 
                   onClick={() => setIsAddingBarber(false)} 
@@ -381,13 +395,13 @@ export default function BarberManager({ barbeariaId, barbers, services, bookings
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-mono text-gray-400 mb-1.5 uppercase tracking-wider font-semibold">Foto de Perfil (URL)</label>
-                  <input 
-                    value={editingBarber.avatar || ''} 
-                    onChange={e => setEditingBarber({...editingBarber, avatar: e.target.value})} 
-                    placeholder="Ex: https://images.unsplash.com/..."
-                    className="w-full p-3 bg-[#131316] border border-white/10 rounded-xl text-sm text-gray-200 focus:outline-none focus:border-amber-500/80 font-mono"
+                  <ImageUploader 
+                    currentImageUrl={editingBarber.avatar}
+                    onUploadSuccess={(url) => setEditingBarber({...editingBarber, avatar: url})}
+                    label="Foto de Perfil"
+                    aspectRatio="square"
                   />
+                  <span className="text-[10px] text-gray-500 mt-1.5 block">Faça upload de uma foto quadrada para o perfil do profissional.</span>
                 </div>
 
                 <div>

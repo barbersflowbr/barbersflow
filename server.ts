@@ -318,9 +318,9 @@ async function startServer() {
           email: email || 'cliente@exemplo.com'
         },
         back_urls: {
-          success: 'https://barbersflow.com/#admin',
-          failure: 'https://barbersflow.com/#admin',
-          pending: 'https://barbersflow.com/#admin'
+          success: 'https://barbersflow.com/admin',
+          failure: 'https://barbersflow.com/admin',
+          pending: 'https://barbersflow.com/admin'
         },
         auto_return: 'approved'
       };
