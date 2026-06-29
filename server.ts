@@ -8,7 +8,18 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 
 // Mock DB Initial State
-let appointments = [
+let appointments: Array<{
+  id: string;
+  barberId: string;
+  serviceId: string;
+  clientName: string;
+  clientEmail: string;
+  clientPhone: string;
+  date: string;
+  time: string;
+  status: 'Ocupado' | 'Concluído' | 'Livre';
+  reminded?: boolean;
+}> = [
   {
     id: 'b1',
     barberId: '1', // Enzo Valentim
@@ -18,7 +29,8 @@ let appointments = [
     clientPhone: '(11) 99999-1111',
     date: '2026-06-26',
     time: '09:00',
-    status: 'Concluído'
+    status: 'Concluído',
+    reminded: false
   },
   {
     id: 'b2',
@@ -29,7 +41,8 @@ let appointments = [
     clientPhone: '(11) 98888-2222',
     date: '2026-06-26',
     time: '10:00',
-    status: 'Ocupado'
+    status: 'Ocupado',
+    reminded: false
   },
   {
     id: 'b3',
@@ -40,7 +53,8 @@ let appointments = [
     clientPhone: '(11) 97777-3333',
     date: '2026-06-26',
     time: '14:00',
-    status: 'Ocupado'
+    status: 'Ocupado',
+    reminded: false
   },
   {
     id: 'b4',
@@ -51,18 +65,20 @@ let appointments = [
     clientPhone: '(11) 96666-4444',
     date: '2026-06-26',
     time: '16:00',
-    status: 'Ocupado'
+    status: 'Ocupado',
+    reminded: false
   },
   {
     id: 'b5',
     barberId: '1', // Enzo Valentim
     serviceId: 's2', // Terapia de Barba
     clientName: 'Roberto Carlos',
-    clientEmail: 'roberto@email.com',
+    clientEmail: 'rodrigo@email.com',
     clientPhone: '(11) 95555-5555',
     date: '2026-06-27',
     time: '11:00',
-    status: 'Ocupado'
+    status: 'Ocupado',
+    reminded: false
   },
   {
     id: 'b6',
@@ -73,7 +89,8 @@ let appointments = [
     clientPhone: '(21) 94444-1234',
     date: '2026-06-26',
     time: '11:00',
-    status: 'Concluído'
+    status: 'Concluído',
+    reminded: false
   }
 ];
 
@@ -82,6 +99,27 @@ async function startServer() {
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   app.use(express.json());
+
+  // Scheduler to check for reminders every 5 minutes
+  setInterval(() => {
+    console.log('[Scheduler] Checking for upcoming reminders...');
+    const now = new Date();
+    
+    appointments.forEach(app => {
+      if (app.status === 'Ocupado' && !app.reminded) {
+        // Simple logic: if booking is on same day, and time is within 1 hour, send reminder
+        const [hour, minute] = app.time.split(':').map(Number);
+        const appDate = new Date(`${app.date}T${app.time}:00`);
+        const diffInHours = (appDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+
+        if (diffInHours > 0 && diffInHours <= 1) {
+          console.log(`[Scheduler] Sending WhatsApp reminder to ${app.clientName} for booking ${app.id}`);
+          app.reminded = true;
+          // In a real implementation, call WhatsApp API here
+        }
+      }
+    });
+  }, 5 * 60 * 1000);
 
   // API Endpoints
   app.get('/api/health', (req, res) => {

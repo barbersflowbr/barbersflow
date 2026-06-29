@@ -17,6 +17,14 @@ const isApiRequest = (url: URL): boolean => {
   return url.pathname.startsWith('/api/') || url.origin !== self.location.origin;
 };
 
+// Helper to check if a request should use SWR strategy
+const isSWRRequest = (url: URL): boolean => {
+  return (
+    url.pathname.includes('/api/bookings') ||
+    (url.hostname.endsWith('.supabase.co') && url.pathname.includes('barbearias'))
+  );
+};
+
 // Install Event: Pre-cache critical static assets
 self.addEventListener('install', (event: ExtendableEvent) => {
   event.waitUntil(
@@ -49,6 +57,20 @@ self.addEventListener('activate', (event: ExtendableEvent) => {
   );
 });
 
+// Push Event: Handle incoming push notifications
+self.addEventListener('push', (event: any) => {
+  const data = event.data ? event.data.text() : 'Nova atualização na Barbearia!';
+  const options = {
+    body: data,
+    icon: '/logo.svg',
+    badge: '/logo.svg'
+  };
+
+  event.waitUntil(
+    self.registration.showNotification('BarbersFlow', options)
+  );
+});
+
 // Fetch Event: Implement specialized caching strategies
 self.addEventListener('fetch', (event: FetchEvent) => {
   const requestUrl = new URL(event.request.url);
@@ -58,8 +80,39 @@ self.addEventListener('fetch', (event: FetchEvent) => {
     return;
   }
 
-  // 1. API Caching Strategy: Network-First (with no caching of private or write actions)
+  // 1. API Caching Strategy: Stale-While-Revalidate for bookings and barber details, Network-First for others
   if (isApiRequest(requestUrl)) {
+    if (isSWRRequest(requestUrl)) {
+      event.respondWith(
+        caches.open(CACHE_NAME).then(async (cache) => {
+          const cachedResponse = await cache.match(event.request);
+          const networkPromise = fetch(event.request)
+            .then((networkResponse) => {
+              if (networkResponse.status === 200) {
+                cache.put(event.request, networkResponse.clone());
+              }
+              return networkResponse;
+            })
+            .catch((err) => {
+              console.warn('[Service Worker] Revalidation failed:', err);
+              if (cachedResponse) return cachedResponse;
+              return new Response(
+                JSON.stringify({ 
+                  error: 'Você está offline', 
+                  message: 'Não foi possível conectar ao servidor. Por favor, verifique sua conexão.' 
+                }),
+                { 
+                  status: 503, 
+                  headers: { 'Content-Type': 'application/json' } 
+                }
+              );
+            });
+          return cachedResponse || networkPromise;
+        })
+      );
+      return;
+    }
+
     event.respondWith(
       fetch(event.request)
         .then((response) => {

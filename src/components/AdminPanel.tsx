@@ -229,6 +229,45 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
     }
   };
 
+  const exportToICS = () => {
+    const monthBookings = bookings.filter(b => b.date.startsWith(selectedDate.substring(0, 7)));
+
+    const vcalendar = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//BarbersFlow//BR',
+      ...monthBookings.map(b => {
+        const startTime = b.date.replace(/-/g, '') + 'T' + b.time.replace(':', '') + '00';
+        
+        const service = services.find(s => s.id === b.serviceId);
+        const duration = service ? service.duration : 30;
+        
+        // Calculate end time
+        const [h, m] = b.time.split(':').map(Number);
+        const endDate = new Date(0, 0, 0, h, m + duration);
+        const endTime = b.date.replace(/-/g, '') + 'T' + 
+                        String(endDate.getHours()).padStart(2, '0') + 
+                        String(endDate.getMinutes()).padStart(2, '0') + '00';
+
+        return [
+          'BEGIN:VEVENT',
+          `UID:${b.id}@barbersflow.com`,
+          `DTSTART:${startTime}`,
+          `DTEND:${endTime}`,
+          `SUMMARY:Agendamento: ${b.clientName} (${service?.name || 'Serviço'})`,
+          'END:VEVENT'
+        ].join('\r\n');
+      }),
+      'END:VCALENDAR'
+    ].join('\r\n');
+
+    const blob = new Blob([vcalendar], { type: 'text/calendar;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `agenda-${selectedDate.substring(0, 7)}.ics`;
+    link.click();
+  };
+
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -2594,6 +2633,14 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
                   >
                     <Plus className="w-4 h-4 text-black stroke-[3px]" />
                     <span>Novo Agendamento</span>
+                  </button>
+
+                  <button
+                    onClick={exportToICS}
+                    className="flex items-center justify-center gap-2 px-5 py-3 bg-white/5 hover:bg-white/10 text-white text-xs font-bold tracking-wider uppercase rounded-xl transition-all duration-300 border border-white/5 cursor-pointer"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Exportar .ics</span>
                   </button>
                 </div>
 

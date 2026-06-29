@@ -161,6 +161,9 @@ export default function ClientPWA({
   const [clientEmail, setClientEmail] = useState("");
   const [clientPhone, setClientPhone] = useState("");
 
+  // Validation states
+  const [errors, setErrors] = useState<{ [key: string]: string }>({});
+
   // API checking and booking states
   const [isCheckingSlots, setIsCheckingSlots] = useState(false);
   const [unavailableSlots, setUnavailableSlots] = useState<string[]>([]);
@@ -169,6 +172,24 @@ export default function ClientPWA({
   const [confirmedBooking, setConfirmedBooking] = useState<Appointment | null>(
     null,
   );
+
+  // Request notification permission on mount
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
+  // Function to show local notification
+  const sendLocalNotification = (title: string, body: string) => {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification(title, {
+        body,
+        icon: '/logo.svg',
+        badge: '/logo.svg'
+      });
+    }
+  };
 
   // Validate URL slug and update activeBarbearia if needed
   useEffect(() => {
@@ -488,9 +509,27 @@ export default function ClientPWA({
     };
   }, [activeBarbearia?.id, selectedBarber?.id, selectedDate, step]);
 
+  const validateFields = (name: string, email: string, phone: string) => {
+    const newErrors: { [key: string]: string } = {};
+    if (name.length < 3) {
+      newErrors.name = "Nome muito curto";
+    }
+    const phoneRegex = /^\(\d{2}\) \d{5}-\d{4}$/;
+    if (!phoneRegex.test(phone)) {
+      newErrors.phone = "Use (XX) XXXXX-XXXX";
+    }
+    if (email && !/\S+@\S+\.\S+/.test(email)) {
+      newErrors.email = "E-mail inválido";
+    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
   // Handle final booking submission
   const handleConfirmBooking = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validateFields(clientName, clientEmail, clientPhone)) return;
+
     if (
       !selectedBarber ||
       !selectedService ||
@@ -498,6 +537,13 @@ export default function ClientPWA({
       !activeBarbearia
     )
       return;
+
+    // Check for conflict right before submission
+    if (unavailableSlots.includes(selectedTime)) {
+      setBookingError("Este horário acabou de ser ocupado. Por favor, escolha outro.");
+      setStep(3);
+      return;
+    }
 
     setIsSubmitting(true);
     setBookingError(null);
@@ -519,6 +565,13 @@ export default function ClientPWA({
       const b = await addBooking(activeBarbearia.id, payload);
       setConfirmedBooking(b);
       triggerVibration("success");
+      
+      // Trigger notification
+      sendLocalNotification(
+        "Agendamento Confirmado!",
+        `Seu agendamento de ${selectedService.name} na ${activeBarbearia.name} para ${selectedDate} às ${selectedTime} foi confirmado com sucesso!`
+      );
+      
       setStep(5); // Go to success screen
     } catch (err: any) {
       console.error(err);
@@ -1413,10 +1466,14 @@ export default function ClientPWA({
                       type="text"
                       required
                       value={clientName}
-                      onChange={(e) => setClientName(e.target.value)}
+                      onChange={(e) => {
+                        setClientName(e.target.value);
+                        validateFields(e.target.value, clientEmail, clientPhone);
+                      }}
                       placeholder="Ex: Gabriel Silva"
-                      className="w-full p-3.5 bg-white/[0.03] border border-white/5 rounded-xl text-xs text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/20 transition-all font-medium"
+                      className={`w-full p-3.5 bg-white/[0.03] border rounded-xl text-xs text-gray-200 placeholder:text-gray-600 focus:outline-none transition-all font-medium ${errors.name ? 'border-rose-500/50' : 'border-white/5 focus:border-amber-500 focus:ring-1 focus:ring-amber-500/20'}`}
                     />
+                    {errors.name && <p className="text-rose-500 text-[9px] mt-1">{errors.name}</p>}
                   </div>
 
                   <div>
@@ -1426,10 +1483,14 @@ export default function ClientPWA({
                     <input
                       type="email"
                       value={clientEmail}
-                      onChange={(e) => setClientEmail(e.target.value)}
+                      onChange={(e) => {
+                        setClientEmail(e.target.value);
+                        validateFields(clientName, e.target.value, clientPhone);
+                      }}
                       placeholder="Ex: seuemail@gmail.com"
-                      className="w-full p-3.5 bg-white/[0.03] border border-white/5 rounded-xl text-xs text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/20 transition-all font-medium"
+                      className={`w-full p-3.5 bg-white/[0.03] border rounded-xl text-xs text-gray-200 placeholder:text-gray-600 focus:outline-none transition-all font-medium ${errors.email ? 'border-rose-500/50' : 'border-white/5 focus:border-amber-500 focus:ring-1 focus:ring-amber-500/20'}`}
                     />
+                    {errors.email && <p className="text-rose-500 text-[9px] mt-1">{errors.email}</p>}
                   </div>
 
                   <div>
@@ -1438,12 +1499,15 @@ export default function ClientPWA({
                     </label>
                     <input
                       type="tel"
-                      required
                       value={clientPhone}
-                      onChange={(e) => setClientPhone(e.target.value)}
+                      onChange={(e) => {
+                        setClientPhone(e.target.value);
+                        validateFields(clientName, clientEmail, e.target.value);
+                      }}
                       placeholder="Ex: (11) 98888-7777"
-                      className="w-full p-3.5 bg-white/[0.03] border border-white/5 rounded-xl text-xs text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/20 transition-all font-medium"
+                      className={`w-full p-3.5 bg-white/[0.03] border rounded-xl text-xs text-gray-200 placeholder:text-gray-600 focus:outline-none transition-all font-medium ${errors.phone ? 'border-rose-500/50' : 'border-white/5 focus:border-amber-500 focus:ring-1 focus:ring-amber-500/20'}`}
                     />
+                    {errors.phone && <p className="text-rose-500 text-[9px] mt-1">{errors.phone}</p>}
                   </div>
 
                   <div className="pt-3">
