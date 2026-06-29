@@ -6,6 +6,26 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
+@keyframes text-gradient {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.animate-text-gradient {
+  animation: text-gradient 4s ease infinite;
+  background-size: 200% auto;
+}
+
+@keyframes float-pulse {
+  0%, 100% { transform: translateY(0) scale(1); box-shadow: 0 0 20px rgba(245,158,11,0.2); }
+  50% { transform: translateY(-3px) scale(1.05); box-shadow: 0 5px 25px rgba(245,158,11,0.4); }
+}
+
+.animate-float-pulse {
+  animation: float-pulse 3s ease-in-out infinite;
+}
+
 /* Custom scrollbar hider for simulated devices and dashboards */
 .no-scrollbar::-webkit-scrollbar {
   display: none;

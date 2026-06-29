@@ -80,13 +80,13 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
       {/* Header */}
       <header className="sticky top-0 z-50 backdrop-blur-md bg-[#0A0A0B]/80 border-b border-white/5">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-[0_0_20px_rgba(245,158,11,0.2)]">
+          <div className="flex items-center gap-3 hover:scale-105 transition-transform duration-300">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center animate-float-pulse">
               <Scissors className="w-5 h-5 text-black" />
             </div>
             <div>
-              <span className="text-xl font-bold tracking-tight bg-gradient-to-r from-white via-gray-200 to-amber-400 bg-clip-text text-transparent">
-                Barbers<span className="text-amber-500">Flow</span>
+              <span className="text-xl font-bold tracking-tight bg-gradient-to-r from-white via-gray-200 to-amber-400 bg-clip-text text-transparent flex items-center gap-1 animate-text-gradient">
+                Barbers<span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-500 via-amber-300 to-amber-600 animate-text-gradient">Flow</span>
               </span>
               <span className="block text-[9px] text-amber-500/80 tracking-widest uppercase font-mono">Premium SaaS</span>
             </div>
@@ -237,7 +237,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
           {/* Text Content */}
           <div className="lg:col-span-7 flex flex-col gap-6 text-center lg:text-left">
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-white leading-[1.1]">
-              Eleve o padrão da sua barbearia com o <span className="bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 bg-clip-text text-transparent">BarbersFlow</span>
+              Eleve o padrão da sua barbearia com o <span className="bg-gradient-to-r from-amber-400 via-amber-200 to-amber-600 bg-clip-text text-transparent animate-text-gradient">BarbersFlow</span>
             </h1>
             <p className="text-base sm:text-lg text-gray-400 max-w-2xl mx-auto lg:mx-0 font-light leading-relaxed">
               O ecossistema completo para gestão de agendas, controle financeiro privado e um aplicativo de agendamento mobile-first impecável que fideliza seus clientes.

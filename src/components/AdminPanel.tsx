@@ -952,8 +952,8 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
             <div className="inline-flex w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 items-center justify-center shadow-[0_0_20px_rgba(245,158,11,0.3)] mb-4">
               <Scissors className="w-6 h-6 text-black" />
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-white">
-              Barbers<span className="text-amber-500">Flow</span> Admin
+            <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-1">
+              Barbers<span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-500 via-amber-300 to-amber-600 animate-text-gradient">Flow</span> Admin
             </h1>
             <p className="text-xs text-gray-400 mt-1.5 font-light">
               Gerencie sua barbearia com banco de dados em tempo real
@@ -1627,8 +1627,8 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
                 <Scissors className="w-4.5 h-4.5 text-black" />
               </div>
               {!isSidebarCollapsed && (
-                <span className="text-base font-bold text-white tracking-tight shrink-0">
-                  Barbers<span className="text-amber-500">Flow</span>
+                <span className="text-base font-bold text-white tracking-tight shrink-0 flex items-center gap-1">
+                  Barbers<span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-500 via-amber-300 to-amber-600 animate-text-gradient">Flow</span>
                 </span>
               )}
             </div>
