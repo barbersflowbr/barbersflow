@@ -123,6 +123,7 @@ interface AdminPanelProps {
 
 export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBarbearia }: AdminPanelProps) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'agenda' | 'config' | 'barbeiros' | 'estoque' | 'marketing'>('agenda');
   const [bookings, setBookings] = useState<Appointment[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>(getTodayDateString()); // Dynamic local date
@@ -138,6 +139,25 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
   const [invFormCostPrice, setInvFormCostPrice] = useState<number>(0);
   const [selectedInvCategoryFilter, setSelectedInvCategoryFilter] = useState<string>('Todos');
   const [editingInventoryId, setEditingInventoryId] = useState<string | null>(null);
+
+  // Skeleton Loader Component
+  const SkeletonLoader = ({ className, key }: { className?: string, key?: React.Key }) => (
+    <motion.div
+      initial={{ opacity: 0.5 }}
+      animate={{ opacity: [0.5, 1, 0.5] }}
+      transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+      className={`bg-white/5 rounded-2xl ${className}`}
+    />
+  );
+
+  const DashboardSkeleton = () => (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
+        {[...Array(5)].map((_, i) => <SkeletonLoader key={i} className="h-32" />)}
+      </div>
+      <SkeletonLoader className="h-64" />
+    </div>
+  );
 
   const exportData = (format: 'csv' | 'json') => {
     const dataToExport = bookings.filter(b => b.date === selectedDate);
@@ -1570,10 +1590,34 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
     <div className="min-h-screen bg-[#0A0A0B] text-gray-100 flex overflow-hidden print:bg-white print:text-black">
       
       {/* Sidebar de navegação colapsável e moderna */}
+      
+      {/* Mobile Menu Toggle (Floating button, visible only on mobile) */}
+      <div className="md:hidden fixed bottom-6 left-6 z-[60]">
+        <button 
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} 
+          className={`p-4 bg-amber-500 text-black rounded-full shadow-[0_4px_20px_rgba(245,158,11,0.3)] hover:bg-amber-400 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+            isMobileMenuOpen ? 'rotate-180 scale-110' : 'rotate-0 scale-100'
+          }`}
+        >
+          {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+        </button>
+      </div>
+      
       <aside 
-        className={`bg-[#0E0E10] border-r border-white/5 flex flex-col justify-between transition-all duration-300 ${
-          isSidebarCollapsed ? 'w-20' : 'w-64'
-        } shrink-0 print:hidden`}
+        className={`
+          bg-[#0E0E10] flex flex-col justify-between shrink-0 print:hidden
+          transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]
+          md:border-r md:border-white/5 border border-white/10
+          md:relative fixed z-50
+          md:translate-y-0 md:opacity-100 md:pointer-events-auto md:scale-100
+          md:h-screen md:rounded-none rounded-3xl shadow-2xl md:shadow-none
+          md:inset-auto inset-4 h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)]
+          ${isSidebarCollapsed ? 'md:w-20' : 'md:w-64'}
+          ${isMobileMenuOpen 
+            ? 'opacity-100 translate-y-0 scale-100 pointer-events-auto flex' 
+            : 'opacity-0 translate-y-16 scale-95 pointer-events-none md:flex'
+          }
+        `}
       >
         <div>
           {/* Sidebar Header */}
@@ -1589,17 +1633,23 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
               )}
             </div>
             <button 
-              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+              onClick={() => {
+                if (isMobileMenuOpen) {
+                  setIsMobileMenuOpen(false);
+                } else {
+                  setIsSidebarCollapsed(!isSidebarCollapsed);
+                }
+              }}
               className="p-1.5 rounded-lg hover:bg-white/5 text-gray-400 hover:text-white transition-colors"
             >
-              <Menu className="w-5 h-5" />
+              {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
           </div>
 
           {/* Navigation Links */}
           <nav className="p-4 flex flex-col gap-1.5">
             <button
-              onClick={() => setActiveTab('agenda')}
+              onClick={() => { setActiveTab('agenda'); setIsMobileMenuOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 cursor-pointer ${
                 activeTab === 'agenda' 
                   ? 'bg-amber-500 text-black shadow-[0_4px_15px_rgba(245,158,11,0.15)] font-bold' 
@@ -1611,7 +1661,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
             </button>
 
             <button
-              onClick={() => setActiveTab('dashboard')}
+              onClick={() => { setActiveTab('dashboard'); setIsMobileMenuOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 cursor-pointer ${
                 activeTab === 'dashboard' 
                   ? 'bg-amber-500 text-black shadow-[0_4px_15px_rgba(245,158,11,0.15)] font-bold' 
@@ -1623,7 +1673,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
             </button>
 
             <button
-              onClick={() => setActiveTab('barbeiros')}
+              onClick={() => { setActiveTab('barbeiros'); setIsMobileMenuOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 cursor-pointer ${
                 activeTab === 'barbeiros' 
                   ? 'bg-amber-500 text-black shadow-[0_4px_15px_rgba(245,158,11,0.15)] font-bold' 
@@ -1635,7 +1685,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
             </button>
 
             <button
-              onClick={() => setActiveTab('estoque')}
+              onClick={() => { setActiveTab('estoque'); setIsMobileMenuOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 cursor-pointer ${
                 activeTab === 'estoque' 
                   ? 'bg-amber-500 text-black shadow-[0_4px_15px_rgba(245,158,11,0.15)] font-bold' 
@@ -1647,7 +1697,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
             </button>
 
             <button
-              onClick={() => setActiveTab('config')}
+              onClick={() => { setActiveTab('config'); setIsMobileMenuOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 cursor-pointer ${
                 activeTab === 'config' 
                   ? 'bg-amber-500 text-black shadow-[0_4px_15px_rgba(245,158,11,0.15)] font-bold' 
@@ -1659,7 +1709,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
             </button>
 
             <button
-              onClick={() => setActiveTab('marketing')}
+              onClick={() => { setActiveTab('marketing'); setIsMobileMenuOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 cursor-pointer ${
                 activeTab === 'marketing' 
                   ? 'bg-amber-500 text-black shadow-[0_4px_15px_rgba(245,158,11,0.15)] font-bold' 
@@ -1749,11 +1799,14 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
 
           {/* TAB 1: METRICS DASHBOARD */}
           {activeTab === 'dashboard' && (
-            <motion.div 
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="space-y-6"
-            >
+            isLoading ? (
+              <DashboardSkeleton />
+            ) : (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="space-y-6"
+              >
               {/* Dynamic quick metrics cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
                 {/* Trial Status */}
@@ -1917,7 +1970,8 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
 
               </div>
             </motion.div>
-          )}
+          )
+        )}
 
           {/* TAB 2: INTERACTIVE AGENDA CALENDAR */}
           {activeTab === 'agenda' && (

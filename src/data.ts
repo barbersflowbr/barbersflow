@@ -12,11 +12,11 @@ export const pricingPlans: PricingPlan[] = [
     period: '/mês',
     description: 'Extremamente atrativo para barbeiros individuais ou duplas que estão começando.',
     features: [
-      'Agenda online inteligente e dinâmica',
-      'Até 3 profissionais/barbeiros cadastrados',
-      'Validação de double-booking via API',
-      'Notificações simples via E-mail',
-      'Suporte via ticket'
+      { text: 'Agenda online inteligente', tooltip: 'Sistema de agendamento automático 24/7' },
+      { text: 'Até 3 profissionais', tooltip: 'Capacidade para até 3 barbeiros simultâneos' },
+      { text: 'Painel gerencial básico', tooltip: 'Visão simples do faturamento e agendamentos' },
+      { text: 'Pagamentos (Pix/QR Code)', tooltip: 'Receba via Pix integrado diretamente no app' },
+      { text: 'Suporte via ticket', tooltip: 'Atendimento via sistema de chamados' }
     ],
     popular: false,
     cta: 'Começar Teste Grátis'
@@ -27,12 +27,14 @@ export const pricingPlans: PricingPlan[] = [
     period: '/mês',
     description: 'O "meio de funil" perfeito. Excelente para barbearias consolidadas de até 8 cadeiras com profissionais ilimitados.',
     features: [
-      'Tudo do plano Standard',
-      'Profissionais ilimitados',
-      'PWA de agendamento personalizado',
-      'Notificações via WhatsApp integradas',
-      'Painel Financeiro Avançado',
-      'Suporte prioritário 24/7'
+      { text: 'Tudo do plano Standard', tooltip: 'Inclui todos os recursos do plano Standard' },
+      { text: 'Profissionais ilimitados', tooltip: 'Sem limite de barbeiros cadastrados' },
+      { text: 'Aplicativo próprio (PWA)', tooltip: 'Seu próprio app de agendamento na tela do cliente' },
+      { text: 'Notificações WhatsApp (sem travamento)', tooltip: 'Lembretes automáticos garantidos' },
+      { text: 'Painel gerencial completo', tooltip: 'Visão detalhada do seu negócio' },
+      { text: 'Controle de estoque e ganhos', tooltip: 'Gestão de insumos e fluxo de caixa' },
+      { text: 'Pagamentos completos (Pix, Cartão, QR)', tooltip: 'Sistema de pagamento robusto integrado' },
+      { text: 'Suporte prioritário 24/7', tooltip: 'Atendimento via chat exclusivo' }
     ],
     popular: true,
     cta: 'Começar Teste Pro'
@@ -43,12 +45,12 @@ export const pricingPlans: PricingPlan[] = [
     period: '/mês',
     description: 'Preço competitivo para redes ou barbearias boutique de altíssimo luxo que demandam múltiplas filiais e IA.',
     features: [
-      'Tudo do plano Pro Flow',
-      'Múltiplas filiais/unidades',
-      'Domínio próprio personalizado (sua-barbearia.com)',
-      'Relatórios de faturamento com Inteligência Artificial',
-      'Gerente de conta dedicado',
-      'Consultoria mensal de branding'
+      { text: 'Tudo do plano Pro Flow', tooltip: 'Inclui todos os recursos do plano Pro Flow' },
+      { text: 'Múltiplas filiais/unidades', tooltip: 'Gerencie todas as suas barbearias em um só lugar' },
+      { text: 'Domínio .com ou .br personalizado', tooltip: 'Seu próprio endereço na web' },
+      { text: 'Relatórios com Inteligência Artificial', tooltip: 'Análise de dados avançada com IA' },
+      { text: 'Gerente de conta dedicado', tooltip: 'Atendimento personalizado para seu negócio' },
+      { text: 'Consultoria mensal de branding', tooltip: 'Apoio na construção da sua marca' }
     ],
     popular: false,
     cta: 'Falar com Consultor'

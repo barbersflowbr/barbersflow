@@ -60,12 +60,17 @@ export interface Metric {
   trend: 'up' | 'down' | 'neutral';
 }
 
+export interface Feature {
+  text: string;
+  tooltip?: string;
+}
+
 export interface PricingPlan {
   name: string;
   price: string;
   period: string;
   description: string;
-  features: string[];
+  features: Feature[];
   popular: boolean;
   cta: string;
 }

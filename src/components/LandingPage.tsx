@@ -20,8 +20,10 @@ import {
   ShieldCheck, 
   Menu, 
   X,
-  LayoutDashboard
+  LayoutDashboard,
+  HelpCircle
 } from 'lucide-react';
+import { Tooltip } from './Tooltip';
 import { pricingPlans } from '../data';
 
 interface LandingPageProps {
@@ -500,7 +502,8 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
                   {plan.features.map((feature, idx) => (
                     <li key={idx} className="flex items-start gap-2.5 text-sm text-gray-300">
                       <Check className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                      <span className="font-light">{feature}</span>
+                      <span className="font-light">{feature.text}</span>
+                      {feature.tooltip && <Tooltip content={feature.tooltip} />}
                     </li>
                   ))}
                 </ul>
@@ -579,7 +582,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
             <div className="w-7 h-7 rounded-lg bg-amber-500 flex items-center justify-center">
               <Scissors className="w-4 h-4 text-black" />
             </div>
-            <span className="font-bold text-gray-300 text-sm tracking-wider uppercase font-mono">BarbersFlow</span>
+            <span className="font-bold text-sm tracking-wider uppercase font-mono bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 bg-clip-text text-transparent">BarbersFlow</span>
           </div>
           <p className="font-light">© 2026 BarbersFlow</p>
           <div className="flex items-center gap-6 font-mono">

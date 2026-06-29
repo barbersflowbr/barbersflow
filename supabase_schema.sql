@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS public.barbearias (
     plan TEXT NOT NULL,
     logo TEXT,
     location TEXT,
+    phone TEXT,
     "isOnboarded" BOOLEAN DEFAULT false,
     barbers JSONB DEFAULT '[]'::jsonb,
     services JSONB DEFAULT '[]'::jsonb,
