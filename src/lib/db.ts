@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { Appointment, Barber, Service, InventoryItem } from '../types';
+import { Appointment, Barber, Service, InventoryItem, Client } from '../types';
 
 export interface Barbearia {
   id: string;
@@ -15,6 +15,7 @@ export interface Barbearia {
   barbers: Barber[];
   services: Service[];
   inventory?: InventoryItem[];
+  clients?: Client[];
   createdAt: string;
 }
 
@@ -63,6 +64,9 @@ export const mockBarbearia: Barbearia = {
     { id: 'inv-2', name: 'Shampoo Refresh Ice Capilar', category: 'Shampoo', stock: 8, minStock: 3, unit: 'unidades', costPrice: 18, lastUpdated: new Date().toISOString() },
     { id: 'inv-3', name: 'Lâminas de Barbear Platinum (Cartela)', category: 'Lâmina', stock: 120, minStock: 50, unit: 'unidades', costPrice: 0.5, lastUpdated: new Date().toISOString() },
     { id: 'inv-4', name: 'Óleo para Barba Wood & Spice', category: 'Outros', stock: 4, minStock: 2, unit: 'unidades', costPrice: 22, lastUpdated: new Date().toISOString() }
+  ],
+  clients: [
+    { id: 'cli-1', name: 'João Silva', phone: '11999999999', email: 'joao@example.com', createdAt: new Date().toISOString() }
   ],
   createdAt: new Date().toISOString()
 };

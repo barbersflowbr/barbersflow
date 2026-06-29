@@ -8,10 +8,10 @@ import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeCanvas } from 'qrcode.react';
 import {
   ResponsiveContainer,
-  AreaChart,
-  Area,
   BarChart,
   Bar,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -54,7 +54,8 @@ import {
   Copy,
   QrCode,
   Printer,
-  Download
+  Download,
+  MessageCircle
 } from 'lucide-react';
 import { initialAvailableHours } from '../data';
 import { Appointment, Barber, Service, InventoryItem } from '../types';
@@ -124,7 +125,7 @@ interface AdminPanelProps {
 export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBarbearia }: AdminPanelProps) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'agenda' | 'config' | 'barbeiros' | 'estoque' | 'marketing'>('agenda');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'agenda' | 'clientes' | 'config' | 'barbeiros' | 'estoque' | 'marketing'>('agenda');
   const [bookings, setBookings] = useState<Appointment[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>(getTodayDateString()); // Dynamic local date
   const [selectedBarberFilter, setSelectedBarberFilter] = useState<string>('all'); // 'all' or specific ID
@@ -277,6 +278,12 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
   const [clientName, setClientName] = useState('');
   const [clientPhone, setClientPhone] = useState('');
   const [selectedServiceId, setSelectedServiceId] = useState('');
+  const [isBlockSlotMode, setIsBlockSlotMode] = useState(false);
+  const [isAddClientModalOpen, setIsAddClientModalOpen] = useState(false);
+  const [newClientName, setNewClientName] = useState('');
+  const [newClientPhone, setNewClientPhone] = useState('');
+  const [newClientEmail, setNewClientEmail] = useState('');
+  const [isSavingClient, setIsSavingClient] = useState(false);
 
   // Dynamic references based on logged-in barbearia
   const barbers = activeBarbearia?.barbers || [];
@@ -835,6 +842,20 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
     }
   };
 
+  const handleSendWhatsAppConfirmation = (booking: Appointment, serviceName: string, time: string) => {
+    if (!booking.clientPhone) return;
+    const phoneDigits = booking.clientPhone.replace(/\D/g, '');
+    if (!phoneDigits) return;
+    
+    const dateFormatted = new Date(`${booking.date}T00:00:00`).toLocaleDateString('pt-BR');
+    const message = `Olá ${booking.clientName}, passando para confirmar seu agendamento de ${serviceName} na ${activeBarbearia?.name || 'barbearia'} para o dia ${dateFormatted} às ${time}. Podemos confirmar?`;
+    
+    // Check if the phone starts with 55 (Brazil country code), if not, add it
+    const fullPhone = phoneDigits.startsWith('55') ? phoneDigits : (phoneDigits.length >= 10 ? `55${phoneDigits}` : phoneDigits);
+    const url = `https://wa.me/${fullPhone}?text=${encodeURIComponent(message)}`;
+    window.open(url, '_blank');
+  };
+
   // Delete/Cancel booking
   const handleDeleteBooking = async (bookingId: string) => {
     if (!confirm('Deseja realmente cancelar este agendamento?')) return;
@@ -846,10 +867,43 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
     }
   };
 
+  const handleAddClient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeBarbearia) return;
+    
+    setIsSavingClient(true);
+    
+    try {
+      const newClient = {
+        id: Math.random().toString(36).substring(2, 15),
+        name: newClientName,
+        phone: newClientPhone,
+        email: newClientEmail,
+        createdAt: new Date().toISOString()
+      };
+      
+      const currentClients = activeBarbearia.clients || [];
+      await updateBarbearia(activeBarbearia.id, {
+        clients: [...currentClients, newClient]
+      });
+      
+      setIsAddClientModalOpen(false);
+      setNewClientName('');
+      setNewClientPhone('');
+      setNewClientEmail('');
+      
+    } catch (err: any) {
+      console.error(err);
+      alert('Erro ao adicionar cliente: ' + err.message);
+    } finally {
+      setIsSavingClient(false);
+    }
+  };
+
   // Quick book from Admin
   const handleAdminBook = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!clientName) {
+    if (!isBlockSlotMode && !clientName) {
       alert('Nome do cliente é obrigatório');
       return;
     }
@@ -858,10 +912,10 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
 
     const payload = {
       barberId: modalBarberId,
-      serviceId: selectedServiceId,
-      clientName,
-      clientEmail: `${clientName.toLowerCase().replace(/\s+/g, '')}@example.com`,
-      clientPhone: clientPhone || '(11) 99999-9999',
+      serviceId: isBlockSlotMode ? (services[0]?.id || '') : selectedServiceId,
+      clientName: isBlockSlotMode ? 'Bloqueio / Indisponível' : clientName,
+      clientEmail: isBlockSlotMode ? 'bloqueado@sistema.com' : `${clientName.toLowerCase().replace(/\s+/g, '')}@example.com`,
+      clientPhone: isBlockSlotMode ? '' : (clientPhone || '(11) 99999-9999'),
       date: modalDate || selectedDate,
       time: modalTime,
       status: 'Ocupado' as const
@@ -881,6 +935,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
     setModalBarberId(barberId);
     setModalTime(time);
     setModalDate(selectedDate);
+    setIsBlockSlotMode(false);
     setIsBookModalOpen(true);
   };
 
@@ -888,6 +943,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
     setModalBarberId(barbers[0]?.id || '');
     setModalTime(initialAvailableHours[0] || '09:00');
     setModalDate(selectedDate);
+    setIsBlockSlotMode(false);
     setIsBookModalOpen(true);
   };
 
@@ -906,6 +962,17 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
   const occupancyRate = totalSlotsPossible > 0 
     ? Math.round(((busyCount + completedCount) / totalSlotsPossible) * 100) 
     : 0;
+
+  const currentMonthPrefix = new Date().toISOString().substring(0, 7);
+  const monthlyRevenue = bookings
+    .filter(b => b.date.startsWith(currentMonthPrefix) && (b.status === 'Concluído' || b.status === 'Ocupado'))
+    .reduce((sum, b) => {
+      const service = services.find(s => s.id === b.serviceId);
+      return sum + (service ? Number(service.price) : 0);
+    }, 0);
+
+  const pendingBookingsTotal = bookings.filter(b => b.status === 'Ocupado').length;
+  const totalUniqueClients = Array.from(new Set(bookings.filter(b => b.clientName).map(b => b.clientPhone || b.clientName))).length;
 
   // Calculate 7-day chart data based on activeBarbearia settings & bookings
   const rolling7Days = get7DaysWindow(selectedDate);
@@ -1661,6 +1728,18 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
             </button>
 
             <button
+              onClick={() => { setActiveTab('clientes'); setIsMobileMenuOpen(false); }}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 cursor-pointer ${
+                activeTab === 'clientes' 
+                  ? 'bg-amber-500 text-black shadow-[0_4px_15px_rgba(245,158,11,0.15)] font-bold' 
+                  : 'text-gray-400 hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              <Users className="w-5 h-5 shrink-0" />
+              {!isSidebarCollapsed && <span>Clientes</span>}
+            </button>
+
+            <button
               onClick={() => { setActiveTab('dashboard'); setIsMobileMenuOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 cursor-pointer ${
                 activeTab === 'dashboard' 
@@ -1758,6 +1837,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
             <h2 className="text-lg font-bold text-white leading-none mt-1">
               {activeTab === 'dashboard' && 'Métricas de Faturamento'}
               {activeTab === 'agenda' && 'Agenda de Atendimento'}
+              {activeTab === 'clientes' && 'Gestão de Clientes'}
               {activeTab === 'config' && 'Configurações da Barbearia'}
               {activeTab === 'barbeiros' && 'Gerenciar Barbeiros'}
               {activeTab === 'estoque' && 'Controle de Estoque & Consumo'}
@@ -1789,6 +1869,33 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
         {/* Content Scroll Container */}
         <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6 print:overflow-visible print:p-0">
           
+          {/* Global Quick Metrics Card */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-[#121215] p-5 rounded-2xl border border-white/5 shadow-lg print:hidden">
+            <div className="flex flex-col gap-1 border-b md:border-b-0 md:border-r border-white/5 pb-4 md:pb-0 md:pr-4">
+              <span className="text-[10px] text-gray-500 font-mono uppercase tracking-widest flex items-center gap-1.5">
+                <DollarSign className="w-3.5 h-3.5 text-emerald-500" />
+                Faturamento do Mês
+              </span>
+              <span className="text-2xl font-extrabold text-white">R$ {monthlyRevenue.toFixed(2)}</span>
+            </div>
+            
+            <div className="flex flex-col gap-1 border-b md:border-b-0 md:border-r border-white/5 pb-4 md:pb-0 md:px-4">
+              <span className="text-[10px] text-gray-500 font-mono uppercase tracking-widest flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-amber-500" />
+                Agendamentos Pendentes
+              </span>
+              <span className="text-2xl font-extrabold text-white">{pendingBookingsTotal}</span>
+            </div>
+            
+            <div className="flex flex-col gap-1 pt-4 md:pt-0 md:pl-4">
+              <span className="text-[10px] text-gray-500 font-mono uppercase tracking-widest flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-blue-500" />
+                Total de Clientes
+              </span>
+              <span className="text-2xl font-extrabold text-white">{totalUniqueClients}</span>
+            </div>
+          </div>
+
           {/* API offline or connection notices */}
           {errorMessage && (
             <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-sm flex items-start gap-2.5">
@@ -1884,16 +1991,10 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
                   
                   <div className="h-72 w-full pt-4">
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart
+                      <LineChart
                         data={chartData}
                         margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
                       >
-                        <defs>
-                          <linearGradient id="colorReceita" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.25}/>
-                            <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
-                          </linearGradient>
-                        </defs>
                         <CartesianGrid strokeDasharray="3 3" stroke="#ffffff08" vertical={false} />
                         <XAxis 
                           dataKey="name" 
@@ -1912,15 +2013,15 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
                           tickFormatter={(val) => `R$${val}`}
                         />
                         <Tooltip content={<CustomTooltip prefix="R$ " />} />
-                        <Area 
+                        <Line 
                           type="monotone" 
                           dataKey="receita" 
                           stroke="#f59e0b" 
                           strokeWidth={2.5}
-                          fillOpacity={1} 
-                          fill="url(#colorReceita)" 
+                          dot={{ r: 4, fill: '#f59e0b', strokeWidth: 0 }}
+                          activeDot={{ r: 6, fill: '#f59e0b', strokeWidth: 0 }}
                         />
-                      </AreaChart>
+                      </LineChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
@@ -2093,43 +2194,59 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
                               if (booking) {
                                 const service = services.find((s) => s.id === booking.serviceId);
                                 const isConcluido = booking.status === 'Concluído';
+                                const isBlocked = booking.clientName === 'Bloqueio / Indisponível';
 
                                 return (
                                   <td key={barber.id} className="px-4 py-2 align-middle border-r border-white/5">
                                     <div 
                                       className={`p-3.5 rounded-2xl border transition-all duration-300 relative group overflow-hidden ${
-                                        isConcluido
-                                          ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-                                          : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                                        isBlocked
+                                          ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                                          : isConcluido
+                                            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                                            : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
                                       }`}
                                     >
                                       {/* Background accent shine */}
                                       <div className={`absolute top-0 right-0 w-20 h-20 rounded-full blur-xl pointer-events-none ${
-                                        isConcluido ? 'bg-emerald-500/10' : 'bg-amber-500/10'
+                                        isBlocked ? 'bg-rose-500/10' : isConcluido ? 'bg-emerald-500/10' : 'bg-amber-500/10'
                                       }`} />
 
                                       <div className="flex items-start justify-between gap-2 relative z-10">
                                         <div>
                                           <div className="flex items-center gap-1.5">
                                             <span className={`w-1.5 h-1.5 rounded-full ${
-                                              isConcluido ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'
+                                              isBlocked ? 'bg-rose-400' : isConcluido ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'
                                             }`} />
                                             <h5 className="text-xs font-bold text-white tracking-wide">{booking.clientName}</h5>
                                           </div>
-                                          <p className="text-[10px] text-gray-400 mt-0.5 font-light">
-                                            {service ? service.name : 'Serviço Premium'} ({service ? service.duration : 45} min)
-                                          </p>
-                                          
-                                          {/* Hidden elements that appear on hover for actions */}
-                                          <div className="mt-2 pt-2 border-t border-white/5 flex flex-wrap items-center gap-3 text-[10px] text-gray-400 font-mono">
-                                            <span className="flex items-center gap-1"><Phone className="w-3 h-3 text-amber-500/60" /> {booking.clientPhone}</span>
-                                            {service && <span className="text-white font-bold">R$ {service.price}</span>}
-                                          </div>
+                                          {!isBlocked && (
+                                            <>
+                                              <p className="text-[10px] text-gray-400 mt-0.5 font-light">
+                                                {service ? service.name : 'Serviço Premium'} ({service ? service.duration : 45} min)
+                                              </p>
+                                              
+                                              {/* Hidden elements that appear on hover for actions */}
+                                              <div className="mt-2 pt-2 border-t border-white/5 flex flex-wrap items-center gap-3 text-[10px] text-gray-400 font-mono">
+                                                <span className="flex items-center gap-1"><Phone className="w-3 h-3 text-amber-500/60" /> {booking.clientPhone}</span>
+                                                {service && <span className="text-white font-bold">R$ {service.price}</span>}
+                                              </div>
+                                            </>
+                                          )}
                                         </div>
 
                                         {/* Dynamic Admin Actions */}
-                                        <div className="flex items-center gap-1">
-                                          {!isConcluido ? (
+                                        <div className="flex flex-wrap items-center justify-end gap-1 mt-2 sm:mt-0">
+                                          {!isBlocked && !isConcluido && booking.clientPhone && (
+                                            <button
+                                              onClick={() => handleSendWhatsAppConfirmation(booking, service ? service.name : 'Serviço', time)}
+                                              title="Enviar Confirmação pelo WhatsApp"
+                                              className="p-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-black border border-emerald-500/20 transition-all cursor-pointer"
+                                            >
+                                              <MessageCircle className="w-3.5 h-3.5" />
+                                            </button>
+                                          )}
+                                          {!isBlocked && !isConcluido && (
                                             <button
                                               onClick={() => handleUpdateStatus(booking.id, 'Concluído')}
                                               title="Concluir Atendimento"
@@ -2137,7 +2254,8 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
                                             >
                                               <Check className="w-3.5 h-3.5" />
                                             </button>
-                                          ) : (
+                                          )}
+                                          {!isBlocked && isConcluido && (
                                             <button
                                               onClick={() => handleUpdateStatus(booking.id, 'Ocupado')}
                                               title="Mudar para Pendente"
@@ -2148,7 +2266,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
                                           )}
                                           <button
                                             onClick={() => handleDeleteBooking(booking.id)}
-                                            title="Cancelar Agendamento"
+                                            title={isBlocked ? "Desbloquear Horário" : "Cancelar Agendamento"}
                                             className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500 hover:text-white text-rose-400 transition-all cursor-pointer"
                                           >
                                             <Trash className="w-3.5 h-3.5" />
@@ -2179,6 +2297,135 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
                     </tbody>
                   </table>
                 </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* TAB: CLIENTES */}
+          {activeTab === 'clientes' && (
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="space-y-6"
+            >
+              <div className="bg-[#121215] p-6 rounded-2xl border border-white/5">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-amber-500/10 flex items-center justify-center border border-amber-500/20">
+                      <Users className="w-6 h-6 text-amber-500" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold text-white">Gestão de Clientes</h3>
+                      <p className="text-sm text-gray-400 mt-1">Lista de clientes e histórico de agendamentos</p>
+                    </div>
+                  </div>
+                  
+                  <button 
+                    onClick={() => setIsAddClientModalOpen(true)}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-black text-sm font-bold rounded-xl transition-colors shrink-0"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Adicionar Cliente
+                  </button>
+                </div>
+
+                {(() => {
+                  const clientMap = new Map<string, any>();
+                  
+                  bookings.forEach(b => {
+                    if (!b.clientName) return;
+                    const identifier = b.clientPhone || b.clientName;
+                    if (!clientMap.has(identifier)) {
+                      clientMap.set(identifier, {
+                        id: identifier,
+                        name: b.clientName,
+                        phone: b.clientPhone || '',
+                        email: b.clientEmail || '',
+                        visits: 0,
+                        lastVisit: b.date,
+                        isManual: false
+                      });
+                    }
+                    const client = clientMap.get(identifier);
+                    client.visits += 1;
+                    if (new Date(`${b.date}T${b.time}`).getTime() > new Date(`${client.lastVisit}T00:00:00`).getTime()) {
+                       client.lastVisit = b.date;
+                    }
+                  });
+
+                  if (activeBarbearia?.clients) {
+                    activeBarbearia.clients.forEach(c => {
+                      const identifier = c.phone || c.name;
+                      if (!clientMap.has(identifier)) {
+                        clientMap.set(identifier, {
+                          id: c.id,
+                          name: c.name,
+                          phone: c.phone || '',
+                          email: c.email || '',
+                          visits: 0,
+                          lastVisit: c.createdAt.substring(0, 10),
+                          isManual: true
+                        });
+                      }
+                    });
+                  }
+
+                  const allClients = Array.from(clientMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+
+                  if (allClients.length === 0) {
+                    return (
+                      <div className="text-center py-16 bg-black/20 rounded-2xl border border-dashed border-white/10">
+                        <Users className="w-12 h-12 text-gray-500 mx-auto mb-4 opacity-50" />
+                        <h3 className="text-lg font-medium text-white mb-1">Nenhum cliente encontrado</h3>
+                        <p className="text-sm text-gray-400">Adicione clientes manualmente ou aguarde novos agendamentos.</p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {allClients.map(client => (
+                        <div key={client.id} className="bg-black/40 border border-white/5 rounded-xl p-5 hover:border-amber-500/30 transition-colors group">
+                          <div className="flex items-start gap-4">
+                            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-amber-400/20 to-amber-600/20 flex items-center justify-center shrink-0 border border-amber-500/20 group-hover:scale-110 transition-transform">
+                              <span className="text-lg font-bold text-amber-500">{client.name.charAt(0).toUpperCase()}</span>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h4 className="text-base font-bold text-white truncate flex items-center gap-2">
+                                {client.name}
+                                {client.isManual && <span className="px-1.5 py-0.5 bg-white/10 rounded text-[9px] font-mono uppercase text-gray-400">Manual</span>}
+                              </h4>
+                              <p className="text-sm text-gray-400 font-mono mt-1 flex items-center gap-1.5">
+                                <Smartphone className="w-3.5 h-3.5" />
+                                {client.phone || 'Não informado'}
+                              </p>
+                              {client.email && (
+                                <p className="text-xs text-gray-500 truncate mt-1 flex items-center gap-1.5">
+                                  <Mail className="w-3 h-3" />
+                                  {client.email}
+                                </p>
+                              )}
+                              <div className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between">
+                                <div className="flex flex-col">
+                                  <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-0.5">Histórico</span>
+                                  <span className="text-xs font-medium text-amber-500">
+                                    {client.visits} {client.visits === 1 ? 'visita' : 'visitas'}
+                                  </span>
+                                </div>
+                                <div className="flex flex-col items-end">
+                                  <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-0.5">Última</span>
+                                  <span className="text-xs font-medium text-gray-300">
+                                    {client.lastVisit ? new Date(`${client.lastVisit}T00:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }) : '-'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
             </motion.div>
           )}
@@ -3140,6 +3387,23 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
               </div>
 
               <form onSubmit={handleAdminBook} className="space-y-4">
+                <div className="flex bg-[#131316] p-1 rounded-xl border border-white/5 mb-4">
+                  <button
+                    type="button"
+                    onClick={() => setIsBlockSlotMode(false)}
+                    className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${!isBlockSlotMode ? 'bg-amber-500 text-black shadow-sm' : 'text-gray-400 hover:text-white'}`}
+                  >
+                    Novo Agendamento
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsBlockSlotMode(true)}
+                    className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${isBlockSlotMode ? 'bg-rose-500 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
+                  >
+                    Bloquear Horário
+                  </button>
+                </div>
+
                 <div>
                   <label className="block text-xs font-mono text-gray-400 mb-1.5">PROFISSIONAL</label>
                   <select
@@ -3182,43 +3446,47 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-mono text-gray-400 mb-1.5">SERVIÇO</label>
-                  <select
-                    value={selectedServiceId}
-                    onChange={(e) => setSelectedServiceId(e.target.value)}
-                    className="w-full p-3 bg-[#131316] border border-white/10 rounded-xl text-sm text-gray-200 focus:outline-none focus:border-amber-500"
-                  >
-                    {services.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} - R$ {s.price} ({s.duration} min)
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {!isBlockSlotMode && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-mono text-gray-400 mb-1.5">SERVIÇO</label>
+                      <select
+                        value={selectedServiceId}
+                        onChange={(e) => setSelectedServiceId(e.target.value)}
+                        className="w-full p-3 bg-[#131316] border border-white/10 rounded-xl text-sm text-gray-200 focus:outline-none focus:border-amber-500"
+                      >
+                        {services.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name} - R$ {s.price} ({s.duration} min)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-                <div>
-                  <label className="block text-xs font-mono text-gray-400 mb-1.5">NOME DO CLIENTE</label>
-                  <input
-                    type="text"
-                    required
-                    value={clientName}
-                    onChange={(e) => setClientName(e.target.value)}
-                    placeholder="Ex: Pedro Henrique"
-                    className="w-full p-3 bg-[#131316] border border-white/10 rounded-xl text-sm text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
-                  />
-                </div>
+                    <div>
+                      <label className="block text-xs font-mono text-gray-400 mb-1.5">NOME DO CLIENTE</label>
+                      <input
+                        type="text"
+                        required
+                        value={clientName}
+                        onChange={(e) => setClientName(e.target.value)}
+                        placeholder="Ex: Pedro Henrique"
+                        className="w-full p-3 bg-[#131316] border border-white/10 rounded-xl text-sm text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                      />
+                    </div>
 
-                <div>
-                  <label className="block text-xs font-mono text-gray-400 mb-1.5">TELEFONE DO CLIENTE (OPCIONAL)</label>
-                  <input
-                    type="text"
-                    value={clientPhone}
-                    onChange={(e) => setClientPhone(e.target.value)}
-                    placeholder="Ex: (11) 98888-7777"
-                    className="w-full p-3 bg-[#131316] border border-white/10 rounded-xl text-sm text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
-                  />
-                </div>
+                    <div>
+                      <label className="block text-xs font-mono text-gray-400 mb-1.5">TELEFONE DO CLIENTE (OPCIONAL)</label>
+                      <input
+                        type="text"
+                        value={clientPhone}
+                        onChange={(e) => setClientPhone(e.target.value)}
+                        placeholder="Ex: (11) 98888-7777"
+                        className="w-full p-3 bg-[#131316] border border-white/10 rounded-xl text-sm text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                      />
+                    </div>
+                  </>
+                )}
 
                 <div className="pt-4 flex items-center gap-3">
                   <button
@@ -3230,9 +3498,11 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 py-3.5 rounded-xl bg-amber-500 text-black text-sm font-extrabold tracking-wide hover:bg-amber-400 transition-colors cursor-pointer"
+                    className={`flex-1 py-3.5 rounded-xl text-sm font-extrabold tracking-wide transition-colors cursor-pointer ${
+                      isBlockSlotMode ? 'bg-rose-500 text-white hover:bg-rose-400' : 'bg-amber-500 text-black hover:bg-amber-400'
+                    }`}
                   >
-                    Confirmar Reserva
+                    {isBlockSlotMode ? 'Confirmar Bloqueio' : 'Confirmar Reserva'}
                   </button>
                 </div>
               </form>
@@ -3510,6 +3780,94 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
                     className="flex-1 py-3.5 rounded-xl bg-amber-500 text-black text-sm font-extrabold tracking-wide hover:bg-amber-400 transition-colors cursor-pointer disabled:opacity-50"
                   >
                     {isSavingConfig ? 'Salvando...' : 'Confirmar'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ADD CLIENT MODAL */}
+      <AnimatePresence>
+        {isAddClientModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsAddClientModalOpen(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-[#0E0E10] border border-white/10 rounded-2xl p-6 shadow-2xl"
+            >
+              <div className="flex items-start justify-between mb-6">
+                <div>
+                  <h3 className="text-xl font-bold text-white tracking-tight">Adicionar Cliente</h3>
+                  <p className="text-xs text-gray-400 mt-1">Adicione um novo cliente manualmente à sua base.</p>
+                </div>
+                <button 
+                  onClick={() => setIsAddClientModalOpen(false)}
+                  className="p-2 text-gray-500 hover:text-white bg-white/5 rounded-full transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleAddClient} className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-mono text-gray-400 mb-1.5 uppercase tracking-wider font-semibold">Nome Completo</label>
+                  <input
+                    type="text"
+                    required
+                    value={newClientName}
+                    onChange={(e) => setNewClientName(e.target.value)}
+                    className="w-full p-3 bg-[#131316] border border-white/10 rounded-xl text-sm text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/80"
+                    placeholder="Ex: João da Silva"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-mono text-gray-400 mb-1.5 uppercase tracking-wider font-semibold">WhatsApp (Opcional)</label>
+                  <input
+                    type="tel"
+                    value={newClientPhone}
+                    onChange={(e) => setNewClientPhone(e.target.value)}
+                    className="w-full p-3 bg-[#131316] border border-white/10 rounded-xl text-sm text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/80"
+                    placeholder="Ex: (11) 99999-9999"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-[10px] font-mono text-gray-400 mb-1.5 uppercase tracking-wider font-semibold">E-mail (Opcional)</label>
+                  <input
+                    type="email"
+                    value={newClientEmail}
+                    onChange={(e) => setNewClientEmail(e.target.value)}
+                    className="w-full p-3 bg-[#131316] border border-white/10 rounded-xl text-sm text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/80"
+                    placeholder="Ex: joao@email.com"
+                  />
+                </div>
+
+                <div className="pt-4 flex items-center gap-3">
+                  <button
+                    type="button"
+                    disabled={isSavingClient}
+                    onClick={() => setIsAddClientModalOpen(false)}
+                    className="flex-1 py-3.5 rounded-xl bg-white/5 border border-white/5 text-sm text-gray-300 font-semibold hover:bg-white/10 transition-colors cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingClient}
+                    className="flex-1 py-3.5 rounded-xl bg-amber-500 text-black text-sm font-extrabold tracking-wide hover:bg-amber-400 transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    {isSavingClient ? 'Salvando...' : 'Adicionar'}
                   </button>
                 </div>
               </form>

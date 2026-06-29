@@ -53,6 +53,15 @@ export interface Appointment {
   status: 'Livre' | 'Ocupado' | 'Concluído';
 }
 
+export interface Client {
+  id: string;
+  name: string;
+  phone: string;
+  email?: string;
+  notes?: string;
+  createdAt: string;
+}
+
 export interface Metric {
   label: string;
   value: string;
