@@ -83,7 +83,9 @@ import {
 import { 
   addBooking, 
   updateBookingStatus, 
-  deleteBookingFromDb 
+  deleteBookingFromDb,
+  sendWelcomeEmail,
+  createCheckoutSession
 } from '../lib/api';
 import { BookingsCalendarSkeleton } from './LoadingSkeleton';
 
@@ -490,23 +492,15 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
     if (planName === 'Black Elite') price = 74.90;
 
     try {
-      const response = await fetch('/api/checkout', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          planName: planName,
-          price: price,
-          email: activeBarbearia.email,
-          title: `Assinatura ${planName} - BarbersFlow`
-        })
-      });
+      const data = await createCheckoutSession(
+        planName,
+        price,
+        `Assinatura ${planName} - BarbersFlow`,
+        activeBarbearia.email,
+      );
 
-      const data = await response.json();
-      
-      if (!data.success) {
-        throw new Error(data.error || 'Erro ao gerar link de pagamento');
+      if (!data?.success) {
+        throw new Error(data?.error || 'Erro ao gerar link de pagamento');
       }
 
       // Redireciona para o Mercado Pago
@@ -620,18 +614,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
       
       // Send welcome email
       try {
-        await fetch('/api/email/welcome', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            email: authEmail,
-            name: authName,
-            slug: authSlug,
-            plan: authPlan
-          }),
-        });
+        await sendWelcomeEmail(authEmail, authName, authSlug, authPlan);
       } catch (emailErr) {
         console.error('Failed to send welcome email:', emailErr);
       }

@@ -32,10 +32,9 @@ import { initialAvailableHours } from "../data";
 import { Barber, Service, Appointment } from "../types";
 import {
   Barbearia,
-  getUnavailableSlots,
   mockBarbearia,
 } from "../lib/db";
-import { addBooking } from "../lib/api";
+import { addBooking, checkBookingAvailability } from "../lib/api";
 import { supabase } from "../lib/supabase";
 import ClientProfile from "./ClientProfile";
 import { PWAInstallPrompt } from "./PWAInstallPrompt";
@@ -571,6 +570,21 @@ export default function ClientPWA({
     };
 
     try {
+      const availability = await checkBookingAvailability({
+        barbeariaId: activeBarbearia.id,
+        barberId: selectedBarber.id,
+        date: selectedDate,
+        time: selectedTime,
+      });
+
+      if (!availability?.available) {
+        setBookingError(
+          "Este horário já não está disponível. Por favor, escolha outro horário.",
+        );
+        setStep(3);
+        return;
+      }
+
       const b = await addBooking(activeBarbearia.id, payload);
       setConfirmedBooking(b);
       triggerVibration("success");
