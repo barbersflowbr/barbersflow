@@ -80,6 +80,7 @@ import {
   updateBarbearia,
   getBarbearia,
   parseBarbeariaPlan,
+  serializeBarbeariaPlan,
   getRemainingDays
 } from '../lib/db';
 import { BookingsCalendarSkeleton } from './LoadingSkeleton';
@@ -332,6 +333,12 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
   const [chartPeriod, setChartPeriod] = useState<'semanal' | 'mensal' | 'anual'>('semanal');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
+  // Real-time broadcast and promotional voucher application state
+  const [forceUpdateTrigger, setForceUpdateTrigger] = useState(0);
+  const [voucherInput, setVoucherInput] = useState('');
+  const [isApplyingVoucher, setIsApplyingVoucher] = useState(false);
+  const [isVoucherFormOpen, setIsVoucherFormOpen] = useState(false);
+
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
     setToast({ message, type });
     setTimeout(() => {
@@ -437,9 +444,9 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
     const planInfo = parseBarbeariaPlan(activeBarbearia.plan);
     const planName = planInfo.name;
 
-    let price = 149;
-    if (planName === 'Pro Flow') price = 289;
-    if (planName === 'Black Elite') price = 499;
+    let price = 34.90;
+    if (planName === 'Pro Flow') price = 54.90;
+    if (planName === 'Black Elite') price = 74.90;
 
     try {
       const response = await fetch('/api/checkout', {
@@ -467,6 +474,77 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
       setErrorMessage(err.message || 'Erro de conexão com o Mercado Pago');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleApplyVoucher = async () => {
+    const codeClean = voucherInput.trim().toUpperCase();
+    if (!codeClean) {
+      showToast('Por favor, digite o código do cupom.', 'error');
+      return;
+    }
+
+    if (!activeBarbearia) return;
+
+    setIsApplyingVoucher(true);
+    try {
+      const vData = localStorage.getItem('saas_promo_vouchers');
+      const vouchersList = vData ? JSON.parse(vData) : [];
+
+      const found = vouchersList.find((v: any) => v.code === codeClean && v.active);
+
+      if (!found) {
+        showToast('Código de cupom inválido, expirado ou inativo.', 'error');
+        setIsApplyingVoucher(false);
+        return;
+      }
+
+      const currentPlanInfo = parseBarbeariaPlan(activeBarbearia.plan);
+      if (found.planTarget !== 'all' && found.planTarget !== currentPlanInfo.name) {
+        showToast(`Este cupom é restrito para assinantes do plano ${found.planTarget}.`, 'error');
+        setIsApplyingVoucher(false);
+        return;
+      }
+
+      let updatedPlanInfo = { ...currentPlanInfo };
+      if (found.type === 'extend_trial') {
+        const originalTrialEnds = currentPlanInfo.trialEndsAt ? new Date(currentPlanInfo.trialEndsAt) : new Date();
+        const newTrialEnds = new Date(originalTrialEnds.getTime() + found.value * 24 * 60 * 60 * 1000);
+        
+        updatedPlanInfo.status = 'trial';
+        updatedPlanInfo.trialEndsAt = newTrialEnds.toISOString();
+        showToast(`Cupom aplicado! Seu período de testes foi estendido em +${found.value} dias.`, 'success');
+      } else if (found.type === 'activate_plan') {
+        const newPlanEnds = new Date(new Date().getTime() + found.value * 24 * 60 * 60 * 1000);
+        
+        updatedPlanInfo.status = 'active';
+        updatedPlanInfo.planEndsAt = newPlanEnds.toISOString();
+        if (found.planTarget !== 'all') {
+          updatedPlanInfo.name = found.planTarget;
+        }
+        showToast(`Cupom aplicado! Seu plano ${updatedPlanInfo.name} foi ativado por ${found.value} dias.`, 'success');
+      }
+
+      const serialized = serializeBarbeariaPlan(updatedPlanInfo);
+
+      await updateBarbearia(activeBarbearia.id, { plan: serialized });
+
+      onSetActiveBarbearia({ ...activeBarbearia, plan: serialized });
+
+      const updatedVouchers = vouchersList.map((v: any) => 
+        v.id === found.id ? { ...v, usedCount: (v.usedCount || 0) + 1 } : v
+      );
+      localStorage.setItem('saas_promo_vouchers', JSON.stringify(updatedVouchers));
+
+      setVoucherInput('');
+      setIsVoucherFormOpen(false);
+      setForceUpdateTrigger(prev => prev + 1);
+
+    } catch (err: any) {
+      console.error('Error applying promo code:', err);
+      showToast('Ocorreu um erro ao aplicar o cupom no banco de dados.', 'error');
+    } finally {
+      setIsApplyingVoucher(false);
     }
   };
   
@@ -2034,6 +2112,114 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
             }
             return null;
           })()}
+
+
+          {/* Real-time Broadcast Alerts from Super Admin */}
+          {(() => {
+            try {
+              const broadcastsStr = localStorage.getItem('saas_broadcasts');
+              if (!broadcastsStr) return null;
+              const bList = JSON.parse(broadcastsStr);
+              if (!Array.isArray(bList)) return null;
+
+              const planInfo = parseBarbeariaPlan(activeBarbearia?.plan);
+              const planName = planInfo.name;
+
+              const activeAlerts = bList.filter((b: any) => {
+                if (!b.active) return false;
+                const matchesTarget = b.target === 'all' || b.target === planName;
+                const isDismissed = localStorage.getItem(`dismissed_broadcast_${b.id}`) === 'true';
+                return matchesTarget && !isDismissed;
+              });
+
+              if (activeAlerts.length === 0) return null;
+
+              return activeAlerts.map((b: any) => {
+                let bgStyle = 'bg-blue-500/10 border-blue-500/20 text-blue-400';
+                let iconColor = 'text-blue-400';
+                if (b.type === 'warning') {
+                  bgStyle = 'bg-amber-500/10 border-amber-500/20 text-amber-400';
+                  iconColor = 'text-amber-400';
+                } else if (b.type === 'success') {
+                  bgStyle = 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400';
+                  iconColor = 'text-emerald-400';
+                } else if (b.type === 'danger') {
+                  bgStyle = 'bg-red-500/10 border-red-500/20 text-red-400';
+                  iconColor = 'text-red-400';
+                }
+
+                return (
+                  <motion.div
+                    key={b.id}
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`p-4 rounded-xl border ${bgStyle} text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <AlertCircle className={`w-5 h-5 shrink-0 mt-0.5 ${iconColor}`} />
+                      <div>
+                        <p className="font-semibold text-white flex items-center gap-2">
+                          {b.title}
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-gray-400 font-mono">SAAS BROADCAST</span>
+                        </p>
+                        <p className="text-gray-300 mt-0.5 leading-relaxed">{b.content}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        localStorage.setItem(`dismissed_broadcast_${b.id}`, 'true');
+                        setForceUpdateTrigger(prev => prev + 1);
+                      }}
+                      className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-white rounded-lg text-xs font-semibold cursor-pointer transition-all self-start sm:self-center shrink-0"
+                    >
+                      Entendi
+                    </button>
+                  </motion.div>
+                );
+              });
+            } catch (e) {
+              return null;
+            }
+          })()}
+
+          {/* Promotional Coupon & Voucher Applicator */}
+          <div className="bg-[#121215] border border-white/5 rounded-2xl p-5">
+            <button
+              onClick={() => setIsVoucherFormOpen(!isVoucherFormOpen)}
+              className="text-xs font-semibold text-gray-400 hover:text-white transition-colors flex items-center gap-2 outline-none cursor-pointer"
+            >
+              <Sparkles className="w-4 h-4 text-amber-500" />
+              <span>Tem um cupom promocional ou código de ativação? Clique aqui</span>
+            </button>
+
+            {isVoucherFormOpen && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                className="mt-4 pt-4 border-t border-white/5 space-y-3"
+              >
+                <p className="text-[11px] text-gray-500 leading-relaxed">
+                  Digite seu cupom promocional de parceiro ou código de suporte técnico para prolongar seu trial ou ativar sua assinatura recorrente instantaneamente.
+                </p>
+                <div className="flex gap-2 max-w-md">
+                  <input
+                    type="text"
+                    placeholder="EX: VIPBLACK"
+                    value={voucherInput}
+                    onChange={(e) => setVoucherInput(e.target.value)}
+                    className="flex-1 px-4 py-2 bg-black/40 border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:border-amber-500 outline-none font-bold uppercase"
+                  />
+                  <button
+                    onClick={handleApplyVoucher}
+                    disabled={isApplyingVoucher}
+                    className="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:bg-amber-500/50 text-black text-xs font-bold rounded-xl transition-all cursor-pointer"
+                  >
+                    {isApplyingVoucher ? 'Aplicando...' : 'Ativar Código'}
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </div>
 
 
           {/* API offline or connection notices */}

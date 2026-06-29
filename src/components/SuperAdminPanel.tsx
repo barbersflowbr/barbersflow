@@ -42,7 +42,10 @@ import {
   ArrowUpRight,
   BarChart3,
   Sliders,
-  Zap
+  Zap,
+  Megaphone,
+  Percent,
+  Download
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { BarbeariaTableSkeleton } from './LoadingSkeleton';
@@ -68,7 +71,7 @@ export default function SuperAdminPanel({ onBack }: { onBack: () => void }) {
   const [toast, setToast] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   // Logs state
-  const [activeTab, setActiveTab] = useState<'barbearias' | 'logs' | 'metrics'>('barbearias');
+  const [activeTab, setActiveTab] = useState<'barbearias' | 'logs' | 'metrics' | 'tools'>('barbearias');
   const [logs, setLogs] = useState<SuperAdminLog[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
   const [logSearchTerm, setLogSearchTerm] = useState('');
@@ -81,7 +84,7 @@ export default function SuperAdminPanel({ onBack }: { onBack: () => void }) {
   });
   const [targetMRR, setTargetMRR] = useState<number>(() => {
     const saved = localStorage.getItem('saas_target_mrr');
-    return saved ? parseInt(saved) : 15000; // default 15,000 BRL target
+    return saved ? parseInt(saved) : 5000; // default 5,000 BRL target
   });
   const [dailyRegGoal, setDailyRegGoal] = useState<number>(() => {
     const saved = localStorage.getItem('saas_daily_reg_goal');
@@ -89,14 +92,28 @@ export default function SuperAdminPanel({ onBack }: { onBack: () => void }) {
   });
 
   // Pricing Simulator State
-  const [simStandardPrice, setSimStandardPrice] = useState<number>(149);
-  const [simProPrice, setSimProPrice] = useState<number>(289);
-  const [simBlackPrice, setSimBlackPrice] = useState<number>(499);
+  const [simStandardPrice, setSimStandardPrice] = useState<number>(34.90);
+  const [simProPrice, setSimProPrice] = useState<number>(54.90);
+  const [simBlackPrice, setSimBlackPrice] = useState<number>(74.90);
 
   // Editable Input States for Goal Settings
   const [goalConvInput, setGoalConvInput] = useState<string>(targetConversionRate.toString());
   const [goalMRRInput, setGoalMRRInput] = useState<string>(targetMRR.toString());
   const [goalRegInput, setGoalRegInput] = useState<string>(dailyRegGoal.toString());
+
+  // Tools & Control Deck States
+  const [broadcastTitle, setBroadcastTitle] = useState('');
+  const [broadcastContent, setBroadcastContent] = useState('');
+  const [broadcastType, setBroadcastType] = useState<'info' | 'warning' | 'success' | 'danger'>('info');
+  const [broadcastTarget, setBroadcastTarget] = useState<string>('all');
+  const [broadcasts, setBroadcasts] = useState<any[]>([]);
+
+  const [voucherCode, setVoucherCode] = useState('');
+  const [voucherType, setVoucherType] = useState<'extend_trial' | 'activate_plan'>('extend_trial');
+  const [voucherValue, setVoucherValue] = useState<number>(30);
+  const [voucherPlanTarget, setVoucherPlanTarget] = useState<string>('all');
+  const [vouchers, setVouchers] = useState<any[]>([]);
+  const [isGeneratingSandbox, setIsGeneratingSandbox] = useState(false);
 
   useEffect(() => {
     setGoalConvInput(targetConversionRate.toString());
@@ -105,11 +122,34 @@ export default function SuperAdminPanel({ onBack }: { onBack: () => void }) {
   }, [targetConversionRate, targetMRR, dailyRegGoal]);
 
   useEffect(() => {
+    let channel: any = null;
+
     async function checkAuth() {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user?.email === 'barbersflowbr@gmail.com') {
         setIsAuthorized(true);
         loadData();
+
+        // Subscribe to real-time changes in the 'barbearias' table
+        channel = supabase
+          .channel('super-admin-barbearias-realtime')
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'barbearias'
+            },
+            () => {
+              // Fetch latest data silently to keep metrics updated in real-time
+              getAllBarbearias().then(data => {
+                if (data) {
+                  setBarbearias(data);
+                }
+              });
+            }
+          )
+          .subscribe();
       } else {
         setIsAuthorized(false);
       }
@@ -117,6 +157,12 @@ export default function SuperAdminPanel({ onBack }: { onBack: () => void }) {
     }
     
     checkAuth();
+
+    return () => {
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
   }, []);
 
   async function loadData() {
@@ -145,11 +191,288 @@ export default function SuperAdminPanel({ onBack }: { onBack: () => void }) {
     }
   }
 
+  const loadToolsData = () => {
+    try {
+      const bData = localStorage.getItem('saas_broadcasts');
+      setBroadcasts(bData ? JSON.parse(bData) : []);
+
+      const vData = localStorage.getItem('saas_promo_vouchers');
+      setVouchers(vData ? JSON.parse(vData) : [
+        {
+          id: '1',
+          code: 'FLOW7DIAS',
+          type: 'extend_trial',
+          value: 7,
+          planTarget: 'all',
+          maxUses: 100,
+          usedCount: 12,
+          active: true,
+          expiresAt: new Date(new Date().getTime() + 30 * 24 * 60 * 60 * 1000).toISOString()
+        },
+        {
+          id: '2',
+          code: 'PROFLOW30',
+          type: 'activate_plan',
+          value: 30,
+          planTarget: 'Pro Flow',
+          maxUses: 50,
+          usedCount: 3,
+          active: true,
+          expiresAt: new Date(new Date().getTime() + 30 * 24 * 60 * 60 * 1000).toISOString()
+        },
+        {
+          id: '3',
+          code: 'VIPBLACK',
+          type: 'activate_plan',
+          value: 30,
+          planTarget: 'Black Elite',
+          maxUses: 10,
+          usedCount: 0,
+          active: true,
+          expiresAt: new Date(new Date().getTime() + 45 * 24 * 60 * 60 * 1000).toISOString()
+        }
+      ]);
+    } catch (e) {
+      console.warn('Error loading tools database:', e);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'logs') {
       loadLogs();
     }
+    if (activeTab === 'tools') {
+      loadToolsData();
+    }
   }, [activeTab]);
+
+  const handleAddBroadcast = () => {
+    if (!broadcastTitle.trim() || !broadcastContent.trim()) {
+      showToast('Por favor, preencha o título e o conteúdo do comunicado.', 'error');
+      return;
+    }
+
+    const newBroadcast = {
+      id: crypto.randomUUID(),
+      title: broadcastTitle,
+      content: broadcastContent,
+      type: broadcastType,
+      target: broadcastTarget,
+      active: true,
+      createdAt: new Date().toISOString()
+    };
+
+    const updatedList = [newBroadcast, ...broadcasts];
+    localStorage.setItem('saas_broadcasts', JSON.stringify(updatedList));
+    setBroadcasts(updatedList);
+
+    // Auditoria
+    createSuperAdminLog({
+      action: 'Comunicado Global',
+      details: `Criou comunicado: "${broadcastTitle}" para planos: ${broadcastTarget}`,
+      performedBy: 'superadmin'
+    });
+
+    setBroadcastTitle('');
+    setBroadcastContent('');
+    showToast('Comunicado enviado e publicado com sucesso!', 'success');
+  };
+
+  const handleToggleBroadcast = (id: string) => {
+    const updated = broadcasts.map((b: any) => b.id === id ? { ...b, active: !b.active } : b);
+    localStorage.setItem('saas_broadcasts', JSON.stringify(updated));
+    setBroadcasts(updated);
+    showToast('Status do comunicado atualizado!', 'success');
+  };
+
+  const handleDeleteBroadcast = (id: string) => {
+    const filtered = broadcasts.filter((b: any) => b.id !== id);
+    localStorage.setItem('saas_broadcasts', JSON.stringify(filtered));
+    setBroadcasts(filtered);
+    showToast('Comunicado excluído.', 'success');
+  };
+
+  const handleAddVoucher = () => {
+    const codeClean = voucherCode.trim().toUpperCase();
+    if (!codeClean) {
+      showToast('Preencha o código do cupom.', 'error');
+      return;
+    }
+
+    if (vouchers.some((v: any) => v.code === codeClean)) {
+      showToast('Este cupom já existe!', 'error');
+      return;
+    }
+
+    const newVoucher = {
+      id: crypto.randomUUID(),
+      code: codeClean,
+      type: voucherType,
+      value: voucherValue,
+      planTarget: voucherPlanTarget,
+      maxUses: 100,
+      usedCount: 0,
+      active: true,
+      expiresAt: new Date(new Date().getTime() + 30 * 24 * 60 * 60 * 1000).toISOString()
+    };
+
+    const updated = [newVoucher, ...vouchers];
+    localStorage.setItem('saas_promo_vouchers', JSON.stringify(updated));
+    setVouchers(updated);
+
+    createSuperAdminLog({
+      action: 'Criar Cupom',
+      details: `Criou cupom: "${codeClean}" (${voucherType === 'extend_trial' ? 'Teste +' + voucherValue + 'd' : 'Ativação ' + voucherPlanTarget})`,
+      performedBy: 'superadmin'
+    });
+
+    setVoucherCode('');
+    showToast('Cupom criado com sucesso!', 'success');
+  };
+
+  const handleToggleVoucher = (id: string) => {
+    const updated = vouchers.map((v: any) => v.id === id ? { ...v, active: !v.active } : v);
+    localStorage.setItem('saas_promo_vouchers', JSON.stringify(updated));
+    setVouchers(updated);
+    showToast('Status do cupom atualizado!', 'success');
+  };
+
+  const handleDeleteVoucher = (id: string) => {
+    const filtered = vouchers.filter((v: any) => v.id !== id);
+    localStorage.setItem('saas_promo_vouchers', JSON.stringify(filtered));
+    setVouchers(filtered);
+    showToast('Cupom excluído.', 'success');
+  };
+
+  const handleGenerateSandbox = async () => {
+    setIsGeneratingSandbox(true);
+    let createdCount = 0;
+    try {
+      const dummyShops = [
+        { name: '💈 Confraria do Bigode', slug: 'confraria-bigode', planName: 'Pro Flow', status: 'active', email: 'confraria@example.com' },
+        { name: '✂️ Corte de Elite Premium', slug: 'corte-elite', planName: 'Black Elite', status: 'active', email: 'elite@example.com' },
+        { name: '🌱 Vintage Club Barbearia', slug: 'vintage-club', planName: 'Standard', status: 'trial', email: 'vintage@example.com' },
+        { name: '👑 Barbearia Dom Pedro', slug: 'dom-pedro', planName: 'Pro Flow', status: 'active', email: 'pedro@example.com' },
+        { name: '🔥 Navalha de Ouro Express', slug: 'navalha-ouro', planName: 'Black Elite', status: 'active', email: 'ouro@example.com' }
+      ];
+
+      for (const shop of dummyShops) {
+        const uniqueSlug = `${shop.slug}-${Math.floor(Math.random() * 9000 + 1000)}`;
+        const planInfo = {
+          name: shop.planName,
+          status: shop.status,
+          planEndsAt: shop.status === 'active' ? new Date(new Date().getTime() + 30 * 24 * 60 * 60 * 1000).toISOString() : undefined,
+          trialEndsAt: shop.status === 'trial' ? new Date(new Date().getTime() + 14 * 24 * 60 * 60 * 1000).toISOString() : undefined,
+        };
+
+        const newBarbearia = {
+          id: crypto.randomUUID(),
+          name: shop.name,
+          email: shop.email,
+          slug: uniqueSlug,
+          plan: JSON.stringify(planInfo),
+          isOnboarded: true,
+          barbers: [
+            { id: 'b1', name: 'Carlos Master', phone: '11999999999', bio: 'Navalha e barba de respeito.', avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=100&h=100&fit=crop', available: true },
+            { id: 'b2', name: 'Felipe Barber', phone: '11988888888', bio: 'Cortes degradê e modernos.', avatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=100&h=100&fit=crop', available: true }
+          ],
+          services: [
+            { id: 's1', name: 'Corte Tradicional', price: 40, duration: 30, category: 'Cabelo', description: 'Corte tradicional com tesoura e máquina.' },
+            { id: 's2', name: 'Barba de Toalha Quente', price: 30, duration: 20, category: 'Barba', description: 'Barba clássica com espuma e toalha.' }
+          ],
+          createdAt: new Date().toISOString()
+        };
+
+        const { error } = await supabase.from('barbearias').insert(newBarbearia);
+        if (!error) {
+          createdCount++;
+        }
+      }
+
+      await createSuperAdminLog({
+        action: 'Massa / Sandbox',
+        details: `Iniciou 5 barbearias de simulação no sistema.`,
+        performedBy: 'superadmin'
+      });
+
+      showToast(`Sandbox inicializado! ${createdCount} lojas de simulação adicionadas com sucesso.`, 'success');
+      
+      const data = await getAllBarbearias();
+      setBarbearias(data || []);
+    } catch (e: any) {
+      showToast(`Erro ao inicializar sandbox: ${e.message}`, 'error');
+    } finally {
+      setIsGeneratingSandbox(false);
+    }
+  };
+
+  const handlePurgeSandbox = async () => {
+    if (!window.confirm('Atenção: Isso irá deletar permanentemente todas as 5 lojas de simulação (emails contendo @example.com). Confirmar?')) return;
+    setIsGeneratingSandbox(true);
+    try {
+      const { data, error } = await supabase.from('barbearias').select('id, name').like('email', '%@example.com');
+      if (error) throw error;
+
+      if (!data || data.length === 0) {
+        showToast('Nenhuma loja de simulação sandbox encontrada no banco.', 'error');
+        return;
+      }
+
+      let deletedCount = 0;
+      for (const shop of data) {
+        const { error: delErr } = await supabase.from('barbearias').delete().eq('id', shop.id);
+        if (!delErr) deletedCount++;
+      }
+
+      await createSuperAdminLog({
+        action: 'Massa / Limpeza',
+        details: `Deletou ${deletedCount} lojas de simulação do banco.`,
+        performedBy: 'superadmin'
+      });
+
+      showToast(`Limpeza concluída! ${deletedCount} barbearias sandbox removidas do sistema.`, 'success');
+      
+      const latestData = await getAllBarbearias();
+      setBarbearias(latestData || []);
+    } catch (e: any) {
+      showToast(`Erro ao limpar sandbox: ${e.message}`, 'error');
+    } finally {
+      setIsGeneratingSandbox(false);
+    }
+  };
+
+  const handleExportCSVReport = () => {
+    try {
+      let csvContent = "data:text/csv;charset=utf-8,";
+      csvContent += "ID,Nome da Barbearia,Email de Cadastro,Slug PWA,Plano Ativo,Status da Assinatura,Data de Cadastro\n";
+
+      barbearias.forEach(b => {
+        const planInfo = parseBarbeariaPlan(b.plan);
+        const row = [
+          b.id,
+          b.name.replace(/,/g, ' '),
+          b.email,
+          b.slug,
+          planInfo.name,
+          planInfo.status,
+          b.createdAt ? new Date(b.createdAt).toLocaleDateString('pt-BR') : 'N/A'
+        ].join(",");
+        csvContent += row + "\n";
+      });
+
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `Relatorio_Consolidado_SaaS_${new Date().toISOString().substring(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      showToast('Relatório consolidado CSV exportado com sucesso!', 'success');
+    } catch (e) {
+      showToast('Erro ao exportar relatório.', 'error');
+    }
+  };
 
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
     setToast({ text, type });
@@ -338,13 +661,27 @@ export default function SuperAdminPanel({ onBack }: { onBack: () => void }) {
     return planInfo.status === 'active';
   }).length;
 
-  // Monthly Recurring Revenue (MRR) - Standard=149, Pro=289, Black=499
+  // Active paid plan types count (status === 'active')
+  const activeStandardCount = barbearias.filter(b => {
+    const planInfo = parseBarbeariaPlan(b.plan);
+    return planInfo.status === 'active' && (planInfo.name === 'Standard' || !planInfo.name);
+  }).length;
+  const activeProCount = barbearias.filter(b => {
+    const planInfo = parseBarbeariaPlan(b.plan);
+    return planInfo.status === 'active' && planInfo.name === 'Pro Flow';
+  }).length;
+  const activeBlackCount = barbearias.filter(b => {
+    const planInfo = parseBarbeariaPlan(b.plan);
+    return planInfo.status === 'active' && planInfo.name === 'Black Elite';
+  }).length;
+
+  // Monthly Recurring Revenue (MRR) - Standard=34.90, Pro=54.90, Black=74.90
   const calculatedMRR = barbearias.reduce((total, b) => {
     const planInfo = parseBarbeariaPlan(b.plan);
     if (planInfo.status === 'active') {
-      if (planInfo.name === 'Black Elite') return total + 499;
-      if (planInfo.name === 'Pro Flow') return total + 289;
-      return total + 149; // Default Standard active
+      if (planInfo.name === 'Black Elite') return total + 74.90;
+      if (planInfo.name === 'Pro Flow') return total + 54.90;
+      return total + 34.90; // Default Standard active
     }
     return total;
   }, 0);
@@ -530,6 +867,19 @@ export default function SuperAdminPanel({ onBack }: { onBack: () => void }) {
             <div className="flex items-center gap-2">
               <Target className="w-4 h-4" />
               <span>Métricas & Metas SaaS</span>
+            </div>
+          </button>
+          <button
+            onClick={() => setActiveTab('tools')}
+            className={`pb-3 px-4 text-sm font-semibold border-b-2 transition-all cursor-pointer ${
+              activeTab === 'tools'
+                ? 'border-amber-500 text-amber-600'
+                : 'border-transparent text-gray-500 hover:text-gray-900 hover:border-gray-300'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Sliders className="w-4 h-4" />
+              <span>Painel de Ferramentas</span>
             </div>
           </button>
         </div>
@@ -1055,16 +1405,16 @@ export default function SuperAdminPanel({ onBack }: { onBack: () => void }) {
                     {/* Standard price slider */}
                     <div className="space-y-1">
                       <div className="flex justify-between text-xs font-medium">
-                        <span className="text-gray-600">Mensalidade Standard ({standardCount} ativas)</span>
-                        <span className="font-bold text-gray-900">R$ {simStandardPrice},00</span>
+                        <span className="text-gray-600">Mensalidade Standard ({activeStandardCount} ativas / {standardCount} total)</span>
+                        <span className="font-bold text-gray-900">R$ {simStandardPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                       </div>
                       <input 
                         type="range"
-                        min="50"
-                        max="300"
-                        step="10"
+                        min="10"
+                        max="100"
+                        step="1"
                         value={simStandardPrice}
-                        onChange={(e) => setSimStandardPrice(parseInt(e.target.value))}
+                        onChange={(e) => setSimStandardPrice(parseFloat(e.target.value))}
                         className="w-full accent-amber-500 h-1.5 bg-gray-100 rounded-lg cursor-pointer"
                       />
                     </div>
@@ -1072,16 +1422,16 @@ export default function SuperAdminPanel({ onBack }: { onBack: () => void }) {
                     {/* Pro pricing slider */}
                     <div className="space-y-1">
                       <div className="flex justify-between text-xs font-medium">
-                        <span className="text-gray-600">Mensalidade Pro Flow ({proCount} ativas)</span>
-                        <span className="font-bold text-gray-900">R$ {simProPrice},00</span>
+                        <span className="text-gray-600">Mensalidade Pro Flow ({activeProCount} ativas / {proCount} total)</span>
+                        <span className="font-bold text-gray-900">R$ {simProPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                       </div>
                       <input 
                         type="range"
-                        min="150"
-                        max="500"
-                        step="10"
+                        min="20"
+                        max="150"
+                        step="1"
                         value={simProPrice}
-                        onChange={(e) => setSimProPrice(parseInt(e.target.value))}
+                        onChange={(e) => setSimProPrice(parseFloat(e.target.value))}
                         className="w-full accent-amber-500 h-1.5 bg-gray-100 rounded-lg cursor-pointer"
                       />
                     </div>
@@ -1089,16 +1439,16 @@ export default function SuperAdminPanel({ onBack }: { onBack: () => void }) {
                     {/* Black Elite slider */}
                     <div className="space-y-1">
                       <div className="flex justify-between text-xs font-medium">
-                        <span className="text-gray-600">Mensalidade Black Elite ({blackCount} ativas)</span>
-                        <span className="font-bold text-gray-900">R$ {simBlackPrice},00</span>
+                        <span className="text-gray-600">Mensalidade Black Elite ({activeBlackCount} ativas / {blackCount} total)</span>
+                        <span className="font-bold text-gray-900">R$ {simBlackPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                       </div>
                       <input 
                         type="range"
-                        min="300"
-                        max="1000"
-                        step="20"
+                        min="30"
+                        max="200"
+                        step="1"
                         value={simBlackPrice}
-                        onChange={(e) => setSimBlackPrice(parseInt(e.target.value))}
+                        onChange={(e) => setSimBlackPrice(parseFloat(e.target.value))}
                         className="w-full accent-amber-500 h-1.5 bg-gray-100 rounded-lg cursor-pointer"
                       />
                     </div>
@@ -1160,7 +1510,7 @@ export default function SuperAdminPanel({ onBack }: { onBack: () => void }) {
                     <div className="space-y-1.5">
                       <div className="flex justify-between text-xs">
                         <span className="font-semibold text-gray-700">💈 Standard</span>
-                        <span className="text-gray-500">{standardCount} lojas ({totalShops > 0 ? Math.round((standardCount / totalShops) * 100) : 0}%)</span>
+                        <span className="text-gray-500">{activeStandardCount} ativa(s) / {standardCount} total ({totalShops > 0 ? Math.round((standardCount / totalShops) * 100) : 0}%)</span>
                       </div>
                       <div className="w-full bg-gray-100 rounded-full h-2">
                         <div 
@@ -1174,7 +1524,7 @@ export default function SuperAdminPanel({ onBack }: { onBack: () => void }) {
                     <div className="space-y-1.5">
                       <div className="flex justify-between text-xs">
                         <span className="font-semibold text-gray-700">✨ Pro Flow</span>
-                        <span className="text-gray-500">{proCount} lojas ({totalShops > 0 ? Math.round((proCount / totalShops) * 100) : 0}%)</span>
+                        <span className="text-gray-500">{activeProCount} ativa(s) / {proCount} total ({totalShops > 0 ? Math.round((proCount / totalShops) * 100) : 0}%)</span>
                       </div>
                       <div className="w-full bg-gray-100 rounded-full h-2">
                         <div 
@@ -1188,7 +1538,7 @@ export default function SuperAdminPanel({ onBack }: { onBack: () => void }) {
                     <div className="space-y-1.5">
                       <div className="flex justify-between text-xs">
                         <span className="font-semibold text-gray-700">👑 Black Elite</span>
-                        <span className="text-gray-500">{blackCount} lojas ({totalShops > 0 ? Math.round((blackCount / totalShops) * 100) : 0}%)</span>
+                        <span className="text-gray-500">{activeBlackCount} ativa(s) / {blackCount} total ({totalShops > 0 ? Math.round((blackCount / totalShops) * 100) : 0}%)</span>
                       </div>
                       <div className="w-full bg-gray-100 rounded-full h-2">
                         <div 
@@ -1291,6 +1641,369 @@ export default function SuperAdminPanel({ onBack }: { onBack: () => void }) {
 
             </div>
 
+          </div>
+        )}
+
+        {activeTab === 'tools' && (
+          <div className="space-y-8 animate-in fade-in duration-200">
+            {/* Page Header */}
+            <div className="bg-gray-50 border border-gray-100 rounded-2xl p-6">
+              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <Sliders className="w-5 h-5 text-amber-500" />
+                Painel de Ferramentas & Controle SaaS
+              </h2>
+              <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                Configure canais de comunicação com lojistas em tempo real, gerencie cupons para campanhas de marketing/suporte, e controle ambientes de sandbox e relatórios.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              {/* Left Column: Communications and Vouchers (Span 2) */}
+              <div className="lg:col-span-2 space-y-8">
+                
+                {/* section: Communications */}
+                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="p-6 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
+                    <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                      <Megaphone className="w-4 h-4 text-amber-500" />
+                      Comunicados Globais (Notificação em Tempo Real)
+                    </h3>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-mono">PUSH REALTIME</span>
+                  </div>
+
+                  <div className="p-6 space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 font-mono uppercase tracking-wider mb-1.5">Título do Alerta</label>
+                        <input
+                          type="text"
+                          placeholder="Ex: Nova atualização do sistema!"
+                          value={broadcastTitle}
+                          onChange={(e) => setBroadcastTitle(e.target.value)}
+                          className="w-full px-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-bold text-gray-700 font-mono uppercase tracking-wider mb-1.5">Estilo / Nível</label>
+                          <select
+                            value={broadcastType}
+                            onChange={(e: any) => setBroadcastType(e.target.value)}
+                            className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none bg-white"
+                          >
+                            <option value="info">Informação (Azul)</option>
+                            <option value="success">Novidade (Verde)</option>
+                            <option value="warning">Alerta (Laranja)</option>
+                            <option value="danger">Crítico (Vermelho)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-gray-700 font-mono uppercase tracking-wider mb-1.5">Público Alvo</label>
+                          <select
+                            value={broadcastTarget}
+                            onChange={(e: any) => setBroadcastTarget(e.target.value)}
+                            className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none bg-white"
+                          >
+                            <option value="all">Todas as Lojas</option>
+                            <option value="Standard">Apenas Standard</option>
+                            <option value="Pro Flow">Apenas Pro Flow</option>
+                            <option value="Black Elite">Apenas Black Elite</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 font-mono uppercase tracking-wider mb-1.5">Mensagem do Comunicado</label>
+                      <textarea
+                        rows={3}
+                        placeholder="Escreva a mensagem clara que aparecerá no painel de controle do dono da barbearia..."
+                        value={broadcastContent}
+                        onChange={(e) => setBroadcastContent(e.target.value)}
+                        className="w-full px-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none resize-none"
+                      />
+                    </div>
+
+                    <button
+                      onClick={handleAddBroadcast}
+                      className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold rounded-xl transition-colors cursor-pointer flex items-center gap-2 self-start"
+                    >
+                      <Megaphone className="w-3.5 h-3.5" />
+                      Publicar Comunicado SaaS
+                    </button>
+
+                    {/* Broadcast List */}
+                    <div className="mt-6 border-t border-gray-100 pt-6">
+                      <h4 className="text-xs font-bold text-gray-600 font-mono uppercase tracking-widest mb-3">Histórico de Mensagens Ativas</h4>
+                      <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
+                        {broadcasts.map((b: any) => (
+                          <div key={b.id} className="p-4 rounded-xl border border-gray-200 bg-gray-50/50 flex items-start justify-between gap-4 text-xs">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className={`w-2.5 h-2.5 rounded-full ${
+                                  b.type === 'danger' ? 'bg-red-500' :
+                                  b.type === 'warning' ? 'bg-amber-500' :
+                                  b.type === 'success' ? 'bg-green-500' : 'bg-blue-500'
+                                }`} />
+                                <strong className="text-gray-900">{b.title}</strong>
+                                <span className="text-[9px] px-1.5 py-0.2 bg-gray-200 text-gray-600 rounded uppercase font-semibold font-mono">
+                                  {b.target === 'all' ? 'Todos' : b.target}
+                                </span>
+                              </div>
+                              <p className="text-gray-600 leading-relaxed">{b.content}</p>
+                              <div className="text-[10px] text-gray-400 font-mono">
+                                {new Date(b.createdAt).toLocaleString('pt-BR')}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleToggleBroadcast(b.id)}
+                                className={`px-2 py-1 rounded font-bold font-mono text-[9px] transition-colors cursor-pointer ${
+                                  b.active ? 'bg-green-100 text-green-800 hover:bg-green-200' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                                }`}
+                              >
+                                {b.active ? 'ATIVO' : 'PAUSADO'}
+                              </button>
+                              <button
+                                onClick={() => handleDeleteBroadcast(b.id)}
+                                className="p-1 bg-red-50 hover:bg-red-100 text-red-500 rounded transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                        {broadcasts.length === 0 && (
+                          <div className="text-center py-6 text-gray-400 text-xs font-medium">
+                            Nenhum comunicado ativo registrado. Envie um acima!
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* section: Vouchers */}
+                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="p-6 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
+                    <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                      <Percent className="w-4 h-4 text-emerald-500" />
+                      Cupons SaaS & Vouchers de Ativação
+                    </h3>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-mono">CONVERSÃO</span>
+                  </div>
+
+                  <div className="p-6 space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 font-mono uppercase tracking-wider mb-1.5">Código Cupom</label>
+                        <input
+                          type="text"
+                          placeholder="EX: VIP90DIAS"
+                          value={voucherCode}
+                          onChange={(e) => setVoucherCode(e.target.value)}
+                          className="w-full px-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none font-bold placeholder:font-normal uppercase"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 font-mono uppercase tracking-wider mb-1.5">Ação do Cupom</label>
+                        <select
+                          value={voucherType}
+                          onChange={(e: any) => setVoucherType(e.target.value)}
+                          className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none bg-white"
+                        >
+                          <option value="extend_trial">Estender Período de Testes</option>
+                          <option value="activate_plan">Ativar Plano Diretamente</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 font-mono uppercase tracking-wider mb-1.5">Valor (Dias de Uso)</label>
+                        <input
+                          type="number"
+                          value={voucherValue}
+                          onChange={(e) => setVoucherValue(Math.max(1, parseInt(e.target.value) || 0))}
+                          className="w-full px-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none font-semibold"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 font-mono uppercase tracking-wider mb-1.5">Plano Destino</label>
+                        <select
+                          value={voucherPlanTarget}
+                          onChange={(e: any) => setVoucherPlanTarget(e.target.value)}
+                          className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none bg-white"
+                        >
+                          <option value="all">Qualquer Plano</option>
+                          <option value="Standard">Standard</option>
+                          <option value="Pro Flow">Pro Flow</option>
+                          <option value="Black Elite">Black Elite</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={handleAddVoucher}
+                      className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer flex items-center gap-2 self-start"
+                    >
+                      <Percent className="w-3.5 h-3.5" />
+                      Criar Código Promocional
+                    </button>
+
+                    {/* Vouchers list table */}
+                    <div className="mt-6 border-t border-gray-100 pt-6">
+                      <h4 className="text-xs font-bold text-gray-600 font-mono uppercase tracking-widest mb-3">Cupons Cadastrados no SaaS</h4>
+                      <div className="overflow-x-auto rounded-xl border border-gray-200">
+                        <table className="w-full text-xs text-left">
+                          <thead className="bg-gray-50 border-b border-gray-100 font-mono font-bold text-gray-500 uppercase">
+                            <tr>
+                              <th className="px-4 py-2.5">Código</th>
+                              <th className="px-4 py-2.5">Tipo de Ação</th>
+                              <th className="px-4 py-2.5 text-center">Dias / Valor</th>
+                              <th className="px-4 py-2.5">Plano Alvo</th>
+                              <th className="px-4 py-2.5 text-center">Status</th>
+                              <th className="px-4 py-2.5 text-right">Ações</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100 text-gray-600">
+                            {vouchers.map((v: any) => (
+                              <tr key={v.id} className="hover:bg-gray-50/50 transition-colors">
+                                <td className="px-4 py-3 font-bold font-mono text-gray-900">
+                                  {v.code}
+                                </td>
+                                <td className="px-4 py-3">
+                                  {v.type === 'extend_trial' ? '🎁 Estender Teste' : '⚡ Ativação de Plano'}
+                                </td>
+                                <td className="px-4 py-3 text-center font-bold font-mono">
+                                  +{v.value}d
+                                </td>
+                                <td className="px-4 py-3 font-semibold text-gray-500">
+                                  {v.planTarget === 'all' ? 'Qualquer um' : v.planTarget}
+                                </td>
+                                <td className="px-4 py-3 text-center">
+                                  <button
+                                    onClick={() => handleToggleVoucher(v.id)}
+                                    className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono transition-colors cursor-pointer ${
+                                      v.active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                                    }`}
+                                  >
+                                    {v.active ? 'ATIVO' : 'PAUSADO'}
+                                  </button>
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  <button
+                                    onClick={() => handleDeleteVoucher(v.id)}
+                                    className="p-1 bg-red-50 hover:bg-red-100 text-red-500 rounded transition-colors cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                            {vouchers.length === 0 && (
+                              <tr>
+                                <td colSpan={6} className="px-4 py-6 text-center text-gray-400 font-medium">
+                                  Nenhum cupom ou código promocional cadastrado.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Right Column: Database Seeding & Analytics Tool (Span 1) */}
+              <div className="space-y-8">
+                
+                {/* section: Sandbox Database Seeder */}
+                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="p-6 border-b border-gray-100 bg-gray-50/50">
+                    <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                      <Zap className="w-4 h-4 text-amber-500 animate-pulse" />
+                      Operações de Massa & Sandbox
+                    </h3>
+                  </div>
+
+                  <div className="p-6 space-y-5">
+                    <p className="text-xs text-gray-500 leading-relaxed">
+                      Ferramentas para demonstrar a plataforma para investidores ou clientes sem precisar criar contas reais passo a passo.
+                    </p>
+
+                    <div className="space-y-4">
+                      {/* Seed button */}
+                      <div className="p-4 rounded-xl border border-amber-100 bg-amber-50/30 space-y-3">
+                        <div className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
+                          <Building2 className="w-4 h-4 text-amber-500" />
+                          Gerar Lojas Sandbox
+                        </div>
+                        <p className="text-[11px] text-gray-500 leading-relaxed">
+                          Adiciona instantaneamente 5 barbearias de simulação completas com diferentes planos e faturamentos para preencher os gráficos de métricas.
+                        </p>
+                        <button
+                          onClick={handleGenerateSandbox}
+                          disabled={isGeneratingSandbox}
+                          className="w-full py-2 bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer animate-pulse"
+                        >
+                          <Sparkles className="w-4 h-4" />
+                          {isGeneratingSandbox ? 'Gerando dados...' : 'Criar 5 Barbearias de Teste'}
+                        </button>
+                      </div>
+
+                      {/* Purge button */}
+                      <div className="p-4 rounded-xl border border-red-100 bg-red-50/30 space-y-3">
+                        <div className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
+                          <Trash2 className="w-4 h-4 text-red-500" />
+                          Limpar Lojas Sandbox
+                        </div>
+                        <p className="text-[11px] text-gray-500 leading-relaxed">
+                          Remove de forma segura todas as lojas geradas para simulação sem afetar nenhum lojista real.
+                        </p>
+                        <button
+                          onClick={handlePurgeSandbox}
+                          disabled={isGeneratingSandbox}
+                          className="w-full py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          {isGeneratingSandbox ? 'Limpando dados...' : 'Remover Barbearias Sandbox'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* section: SaaS Exporters */}
+                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="p-6 border-b border-gray-100 bg-gray-50/50">
+                    <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                      <Download className="w-4 h-4 text-blue-500" />
+                      Relatórios & Exportadores
+                    </h3>
+                  </div>
+
+                  <div className="p-6 space-y-4">
+                    <p className="text-xs text-gray-500 leading-relaxed">
+                      Exporte o banco de dados de clientes consolidados e assinaturas em formato compatível com Excel e BI.
+                    </p>
+
+                    <button
+                      onClick={handleExportCSVReport}
+                      className="w-full py-2.5 bg-gray-900 hover:bg-gray-800 text-white text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <Download className="w-4 h-4 text-amber-500" />
+                      Exportar Base Lojistas (.CSV)
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+            </div>
           </div>
         )}
       </div>
