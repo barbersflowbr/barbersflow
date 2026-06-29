@@ -6,119 +6,80 @@
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
+import { z } from 'zod';
+import pino from 'pino';
 
-// Mock DB Initial State
-let appointments: Array<{
-  id: string;
-  barberId: string;
-  serviceId: string;
-  clientName: string;
-  clientEmail: string;
-  clientPhone: string;
-  date: string;
-  time: string;
-  status: 'Ocupado' | 'Concluído' | 'Livre';
-  reminded?: boolean;
-}> = [
-  {
-    id: 'b1',
-    barberId: '1', // Enzo Valentim
-    serviceId: 's1', // Corte Premium
-    clientName: 'Rodrigo Silva',
-    clientEmail: 'rodrigo@email.com',
-    clientPhone: '(11) 99999-1111',
-    date: '2026-06-26',
-    time: '09:00',
-    status: 'Concluído',
-    reminded: false
-  },
-  {
-    id: 'b2',
-    barberId: '1', // Enzo Valentim
-    serviceId: 's3', // Assinatura Combo
-    clientName: 'Carlos Eduardo',
-    clientEmail: 'carlos@email.com',
-    clientPhone: '(11) 98888-2222',
-    date: '2026-06-26',
-    time: '10:00',
-    status: 'Ocupado',
-    reminded: false
-  },
-  {
-    id: 'b3',
-    barberId: '2', // Gabriel Becker
-    serviceId: 's2', // Terapia de Barba
-    clientName: 'Matheus Pereira',
-    clientEmail: 'matheus@email.com',
-    clientPhone: '(11) 97777-3333',
-    date: '2026-06-26',
-    time: '14:00',
-    status: 'Ocupado',
-    reminded: false
-  },
-  {
-    id: 'b4',
-    barberId: '3', // Lucas Fontana
-    serviceId: 's1', // Corte Premium
-    clientName: 'Felipe Andrade',
-    clientEmail: 'felipe@email.com',
-    clientPhone: '(11) 96666-4444',
-    date: '2026-06-26',
-    time: '16:00',
-    status: 'Ocupado',
-    reminded: false
-  },
-  {
-    id: 'b5',
-    barberId: '1', // Enzo Valentim
-    serviceId: 's2', // Terapia de Barba
-    clientName: 'Roberto Carlos',
-    clientEmail: 'rodrigo@email.com',
-    clientPhone: '(11) 95555-5555',
-    date: '2026-06-27',
-    time: '11:00',
-    status: 'Ocupado',
-    reminded: false
-  },
-  {
-    id: 'b6',
-    barberId: '3', // Lucas Fontana
-    serviceId: 's3', // Combo
-    clientName: 'Gabriel Medeiros',
-    clientEmail: 'gabriel.medeiros@email.com',
-    clientPhone: '(21) 94444-1234',
-    date: '2026-06-26',
-    time: '11:00',
-    status: 'Concluído',
-    reminded: false
-  }
-];
+// Supabase Client
+import { createClient } from '@supabase/supabase-js';
+
+const logger = pino();
+
+const envSchema = z.object({
+  PORT: z.string().default('3000'),
+  VITE_SUPABASE_URL: z.string().url(),
+  VITE_SUPABASE_ANON_KEY: z.string().min(1),
+});
+
+const env = envSchema.safeParse(process.env);
+if (!env.success) {
+  logger.error('Invalid environment variables:', env.error.format());
+  process.exit(1);
+}
+
+const getSupabase = () => {
+  return createClient(env.data.VITE_SUPABASE_URL, env.data.VITE_SUPABASE_ANON_KEY);
+};
+const supabase = getSupabase();
 
 async function startServer() {
   const app = express();
-  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-
+  const PORT = parseInt(env.data.PORT, 10);
   app.use(express.json());
 
+  // Logging middleware
+  app.use((req, res, next) => {
+    logger.info({ method: req.method, url: req.url }, 'Incoming request');
+    next();
+  });
+
   // Scheduler to check for reminders every 5 minutes
-  setInterval(() => {
-    console.log('[Scheduler] Checking for upcoming reminders...');
+  setInterval(async () => {
+    logger.info('[Scheduler] Checking for upcoming reminders...');
     const now = new Date();
     
-    appointments.forEach(app => {
-      if (app.status === 'Ocupado' && !app.reminded) {
-        // Simple logic: if booking is on same day, and time is within 1 hour, send reminder
-        const [hour, minute] = app.time.split(':').map(Number);
-        const appDate = new Date(`${app.date}T${app.time}:00`);
-        const diffInHours = (appDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+    const { data: upcomingBookings, error } = await supabase
+        .from('bookings')
+        .select('*')
+        .eq('status', 'Ocupado');
 
-        if (diffInHours > 0 && diffInHours <= 1) {
-          console.log(`[Scheduler] Sending WhatsApp reminder to ${app.clientName} for booking ${app.id}`);
-          app.reminded = true;
-          // In a real implementation, call WhatsApp API here
+    if (error) {
+        logger.error({ error }, 'Error fetching bookings for reminders');
+        return;
+    }
+
+    if (upcomingBookings) {
+        for (const booking of upcomingBookings) {
+            // If reminded column exists, skip
+            if (booking.reminded) continue;
+
+            const appDate = new Date(`${booking.date}T${booking.time}:00`);
+            const diffInHours = (appDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+
+            if (diffInHours > 0 && diffInHours <= 1) {
+                logger.info({ clientPhone: booking.clientPhone }, `[WhatsApp Reminder] Enviando para ${booking.clientPhone}: Olá ${booking.clientName}, lembrete: seu agendamento na BarbersFlow está marcado para ${booking.date} às ${booking.time}.`);
+                
+                // Mark as reminded in DB if column exists (try/catch to avoid crash if not)
+                try {
+                  await supabase
+                      .from('bookings')
+                      .update({ reminded: true })
+                      .eq('id', booking.id);
+                } catch (e) {
+                  logger.warn({ error: e }, 'Could not update reminder status (column might not exist)');
+                }
+            }
         }
-      }
-    });
+    }
   }, 5 * 60 * 1000);
 
   // API Endpoints
@@ -127,67 +88,98 @@ async function startServer() {
   });
 
   // Get all bookings
-  app.get('/api/bookings', (req, res) => {
-    res.json(appointments);
+  app.get('/api/bookings', async (req, res) => {
+    const { data, error } = await supabase.from('bookings').select('*');
+    if (error) {
+      res.status(500).json({ error: error.message });
+      return;
+    }
+    res.json(data);
   });
 
   // Check double-booking slot availability
-  app.post('/api/bookings/check', (req, res) => {
-    const { barberId, date, time } = req.body;
+  app.post('/api/bookings/check', async (req, res) => {
+    const { barberId, date, time, barbeariaId } = req.body;
 
-    if (!barberId || !date || !time) {
-       res.status(400).json({ error: 'barberId, date, and time are required' });
+    if (!barberId || !date || !time || !barbeariaId) {
+       res.status(400).json({ error: 'barberId, date, time, and barbeariaId are required' });
        return;
     }
 
     // Check if there is an active booking at the same date, time and barber
-    const isBooked = appointments.some(
-      (app) => app.barberId === barberId && app.date === date && app.time === time
-    );
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('id')
+      .eq('barbeariaId', barbeariaId)
+      .eq('barberId', barberId)
+      .eq('date', date)
+      .eq('time', time);
+    
+    if (error) {
+      res.status(500).json({ error: error.message });
+      return;
+    }
 
-    res.json({ available: !isBooked });
+    res.json({ available: data.length === 0 });
   });
 
   // Book a new appointment with API-level validation
-  app.post('/api/bookings', (req, res) => {
-    const { barberId, serviceId, clientName, clientEmail, clientPhone, date, time } = req.body;
+  app.post('/api/bookings', async (req, res) => {
+    const { barbeariaId, barberId, serviceId, clientName, clientEmail, clientPhone, date, time } = req.body;
 
-    if (!barberId || !serviceId || !clientName || !clientEmail || !clientPhone || !date || !time) {
+    if (!barbeariaId || !barberId || !serviceId || !clientName || !clientEmail || !clientPhone || !date || !time) {
        res.status(400).json({ error: 'Todos os campos são obrigatórios' });
        return;
     }
 
-    // Server-side double booking prevention check
-    const isAlreadyBooked = appointments.some(
-      (app) => app.barberId === barberId && app.date === date && app.time === time
-    );
+    // Check availability in DB
+    const { data: existing, error: checkError } = await supabase
+      .from('bookings')
+      .select('id')
+      .eq('barbeariaId', barbeariaId)
+      .eq('barberId', barberId)
+      .eq('date', date)
+      .eq('time', time);
 
-    if (isAlreadyBooked) {
+    if (checkError) {
+       res.status(500).json({ error: checkError.message });
+       return;
+    }
+
+    if (existing && existing.length > 0) {
        res.status(409).json({ 
         error: 'Erro de Duplo Agendamento', 
-        message: 'O horário selecionado já foi reservado para este barbeiro. Por favor, escolha outro horário ou profissional.' 
+        message: 'O horário selecionado já foi reservado para este barbeiro.' 
       });
        return;
     }
 
-    const newAppointment = {
-      id: `booking_${Date.now()}`,
-      barberId,
-      serviceId,
-      clientName,
-      clientEmail,
-      clientPhone,
-      date,
-      time,
-      status: 'Ocupado' as const
-    };
+    const { data, error } = await supabase
+      .from('bookings')
+      .insert({
+        barbeariaId,
+        barberId,
+        serviceId,
+        clientName,
+        clientEmail,
+        clientPhone,
+        date,
+        time,
+        status: 'Ocupado'
+      })
+      .select()
+      .single();
 
-    appointments.push(newAppointment);
-    res.status(201).json({ success: true, booking: newAppointment });
+    if (error) {
+       res.status(500).json({ error: error.message });
+       return;
+    }
+
+    res.status(201).json({ success: true, booking: data });
   });
 
   // Update appointment status (Admin agenda action)
-  app.post('/api/bookings/update-status', (req, res) => {
+  app.post('/api/bookings/update-status', async (req, res) => {
     const { id, status } = req.body;
 
     if (!id || !status) {
@@ -195,25 +187,37 @@ async function startServer() {
        return;
     }
 
-    const index = appointments.findIndex((app) => app.id === id);
-    if (index === -1) {
-       res.status(404).json({ error: 'Appointment not found' });
+    const { error } = await supabase
+      .from('bookings')
+      .update({ status })
+      .eq('id', id);
+    
+    if (error) {
+       res.status(500).json({ error: error.message });
        return;
     }
 
-    appointments[index].status = status;
-    res.json({ success: true, booking: appointments[index] });
+    res.json({ success: true });
   });
 
   // Add/Quick-create booking from Admin Agenda
-  app.post('/api/bookings/admin-add', (req, res) => {
-    const { barberId, serviceId, clientName, clientEmail, clientPhone, date, time, status } = req.body;
+  app.post('/api/bookings/admin-add', async (req, res) => {
+    const { barbeariaId, barberId, serviceId, clientName, clientEmail, clientPhone, date, time, status } = req.body;
     
-    const isAlreadyBooked = appointments.some(
-      (app) => app.barberId === barberId && app.date === date && app.time === time
-    );
+    const { data: existing, error: checkError } = await supabase
+      .from('bookings')
+      .select('id')
+      .eq('barbeariaId', barbeariaId)
+      .eq('barberId', barberId)
+      .eq('date', date)
+      .eq('time', time);
 
-    if (isAlreadyBooked) {
+    if (checkError) {
+        res.status(500).json({ error: checkError.message });
+        return;
+    }
+
+    if (existing && existing.length > 0) {
        res.status(409).json({ 
         error: 'Double Booking', 
         message: 'Horário indisponível para este profissional.' 
@@ -221,24 +225,32 @@ async function startServer() {
        return;
     }
 
-    const newApp = {
-      id: `booking_${Date.now()}`,
-      barberId,
-      serviceId,
-      clientName,
-      clientEmail: clientEmail || 'admin@barbersflow.com',
-      clientPhone: clientPhone || '(11) 99999-9999',
-      date,
-      time,
-      status: status || 'Ocupado'
-    };
+    const { data, error } = await supabase
+      .from('bookings')
+      .insert({
+        barbeariaId,
+        barberId,
+        serviceId,
+        clientName,
+        clientEmail: clientEmail || 'admin@barbersflow.com',
+        clientPhone: clientPhone || '(11) 99999-9999',
+        date,
+        time,
+        status: status || 'Ocupado'
+      })
+      .select()
+      .single();
+      
+    if (error) {
+       res.status(500).json({ error: error.message });
+       return;
+    }
 
-    appointments.push(newApp);
-    res.status(201).json({ success: true, booking: newApp });
+    res.status(201).json({ success: true, booking: data });
   });
 
   // Cancel/Delete appointment
-  app.post('/api/bookings/delete', (req, res) => {
+  app.post('/api/bookings/delete', async (req, res) => {
     const { id } = req.body;
 
     if (!id) {
@@ -246,11 +258,13 @@ async function startServer() {
        return;
     }
 
-    const initialLength = appointments.length;
-    appointments = appointments.filter((app) => app.id !== id);
+    const { error } = await supabase
+      .from('bookings')
+      .delete()
+      .eq('id', id);
 
-    if (appointments.length === initialLength) {
-       res.status(404).json({ error: 'Appointment not found' });
+    if (error) {
+       res.status(500).json({ error: error.message });
        return;
     }
 
@@ -269,8 +283,8 @@ async function startServer() {
     try {
       const resendKey = process.env.RESEND_API_KEY;
       if (!resendKey) {
-        console.log(`[Email Mock] Boas-vindas para ${email} (${name}) - Slug: ${slug}, Plano: ${plan}`);
-        console.log(`[Email Mock] "Olá ${name}, bem-vindo ao BarbersFlow! Seu link é: barbersflow.com/${slug}"`);
+        logger.info(`[Email Mock] Boas-vindas para ${email} (${name}) - Slug: ${slug}, Plano: ${plan}`);
+        logger.info(`[Email Mock] "Olá ${name}, bem-vindo ao BarbersFlow! Seu link é: barbersflow.com/${slug}"`);
         res.json({ success: true, mock: true });
         return;
       }
@@ -328,7 +342,7 @@ async function startServer() {
     try {
       const mpToken = process.env.MERCADOPAGO_ACCESS_TOKEN;
       if (!mpToken) {
-        console.log(`[MercadoPago Mock] Checkout para o plano: ${planName}`);
+        logger.info(`[MercadoPago Mock] Checkout para o plano: ${planName}`);
         // Return a dummy URL for testing if no token is provided
         res.json({ success: true, init_point: 'https://sandbox.mercadopago.com.br/checkout/v1/redirect?pref_id=mock-id-123' });
         return;
@@ -421,26 +435,14 @@ async function startServer() {
     }
 
     try {
-      const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-
-      if (!supabaseUrl || !supabaseAnonKey) {
-        console.warn("Supabase credentials missing on server. Serving default manifest.");
-        res.json(defaultManifest);
-        return;
-      }
-
-      const { createClient } = await import('@supabase/supabase-js');
-      const supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
-
-      const { data, error } = await supabaseClient
+      const { data, error } = await supabase
         .from('barbearias')
         .select('name, slug, logo')
         .eq('slug', slug.toLowerCase())
         .single();
 
       if (error || !data) {
-        console.warn(`Could not find barbearia with slug "${slug}" for dynamic manifest, serving default.`, error?.message);
+        logger.warn(`Could not find barbearia with slug "${slug}" for dynamic manifest, serving default.`, error?.message);
         res.json(defaultManifest);
         return;
       }
@@ -486,9 +488,15 @@ async function startServer() {
 
       res.json(customManifest);
     } catch (err) {
-      console.error("Error creating dynamic manifest:", err);
+      logger.error({ err }, "Error creating dynamic manifest");
       res.json(defaultManifest);
     }
+  });
+
+  // Global Error Handler
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    logger.error({ err }, `[Error] ${err.stack}`);
+    res.status(500).json({ error: 'Internal Server Error' });
   });
 
   // Integrate Vite as a middleware for development
@@ -507,7 +515,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    logger.info(`Server running on http://localhost:${PORT}`);
   });
 }
 

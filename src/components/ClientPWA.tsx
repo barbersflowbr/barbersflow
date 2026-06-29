@@ -32,11 +32,12 @@ import { initialAvailableHours } from "../data";
 import { Barber, Service, Appointment } from "../types";
 import {
   Barbearia,
-  addBooking,
   getUnavailableSlots,
   mockBarbearia,
 } from "../lib/db";
+import { addBooking } from "../lib/api";
 import { supabase } from "../lib/supabase";
+import ClientProfile from "./ClientProfile";
 import { PWAInstallPrompt } from "./PWAInstallPrompt";
 import { PWAShellSkeleton } from "./LoadingSkeleton";
 
@@ -157,9 +158,16 @@ export default function ClientPWA({
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
 
   // Client inputs
-  const [clientName, setClientName] = useState("");
-  const [clientEmail, setClientEmail] = useState("");
-  const [clientPhone, setClientPhone] = useState("");
+  const [clientName, setClientName] = useState(() => localStorage.getItem('clientName') || "");
+  const [clientEmail, setClientEmail] = useState(() => localStorage.getItem('clientEmail') || "");
+  const [clientPhone, setClientPhone] = useState(() => localStorage.getItem('clientPhone') || "");
+
+  // Save client inputs to localStorage when they change
+  useEffect(() => {
+    localStorage.setItem('clientName', clientName);
+    localStorage.setItem('clientEmail', clientEmail);
+    localStorage.setItem('clientPhone', clientPhone);
+  }, [clientName, clientEmail, clientPhone]);
 
   // Validation states
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
@@ -172,6 +180,7 @@ export default function ClientPWA({
   const [confirmedBooking, setConfirmedBooking] = useState<Appointment | null>(
     null,
   );
+  const [showProfile, setShowProfile] = useState(false);
 
   // Request notification permission on mount
   useEffect(() => {
@@ -733,8 +742,34 @@ export default function ClientPWA({
               Voltar
             </button>
           )}
+          {step === 0 && (
+            <button
+              onClick={() => {
+                triggerVibration("light");
+                setShowProfile(true);
+              }}
+              className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300"
+            >
+              <User className="w-5 h-5" />
+            </button>
+          )}
         </div>
       </header>
+
+      {/* Profile Modal */}
+      <AnimatePresence>
+        {showProfile && (
+          <ClientProfile
+            clientName={clientName}
+            setClientName={setClientName}
+            clientEmail={clientEmail}
+            setClientEmail={setClientEmail}
+            clientPhone={clientPhone}
+            setClientPhone={setClientPhone}
+            onClose={() => setShowProfile(false)}
+          />
+        )}
+      </AnimatePresence>
 
       {/* STEPPER PROGRESS BAR */}
       {step > 0 && step < 5 && (
@@ -1540,22 +1575,22 @@ export default function ClientPWA({
               key="step5"
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="flex flex-col gap-5 text-center py-4 max-w-md mx-auto w-full"
+              exit={{ opacity: 0, scale: 0.9 }}
+              transition={{ duration: 0.4 }}
+              className="flex flex-col gap-6 text-center py-10"
             >
-              <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mx-auto">
-                <Check className="w-8 h-8 font-extrabold" />
-              </div>
-
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ type: "spring", stiffness: 260, damping: 20, delay: 0.1 }}
+                className="w-20 h-20 bg-emerald-500/20 text-emerald-500 rounded-full flex items-center justify-center mx-auto"
+              >
+                <CheckCircle2 className="w-10 h-10" />
+              </motion.div>
               <div>
-                <span className="text-[9px] font-mono font-bold text-emerald-400 uppercase tracking-widest bg-emerald-500/5 px-2 py-1 rounded-full border border-emerald-500/10 inline-block">
-                  Agendamento Confirmado
-                </span>
-                <h3 className="text-base font-extrabold text-white mt-3 tracking-wide">
-                  Tudo pronto para seu corte!
-                </h3>
-                <p className="text-[10px] text-gray-400 font-light max-w-[280px] mx-auto mt-1 leading-relaxed">
-                  Você receberá um lembrete no WhatsApp 2 horas antes de seu
-                  horário agendado.
+                <h2 className="text-xl font-bold text-white">Agendado com Sucesso!</h2>
+                <p className="text-sm text-gray-400 mt-2">
+                  Seu horário na {activeBarbearia?.name} está reservado.
                 </p>
               </div>
 

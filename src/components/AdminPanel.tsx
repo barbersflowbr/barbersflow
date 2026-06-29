@@ -74,15 +74,17 @@ import {
   resetPasswordForEmail,
   updatePassword,
   subscribeBookings, 
-  addBooking, 
-  updateBookingStatus, 
-  deleteBookingFromDb, 
   updateBarbearia,
   getBarbearia,
   parseBarbeariaPlan,
   serializeBarbeariaPlan,
   getRemainingDays
 } from '../lib/db';
+import { 
+  addBooking, 
+  updateBookingStatus, 
+  deleteBookingFromDb 
+} from '../lib/api';
 import { BookingsCalendarSkeleton } from './LoadingSkeleton';
 
 function get7DaysWindow(anchorDateStr: string) {
