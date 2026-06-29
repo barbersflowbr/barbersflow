@@ -11,7 +11,7 @@ import {
   logoutBarbearia,
   createSuperAdminLog,
   getSuperAdminLogs
-} from '../lib/db';
+} from '../lib/db-postgres';
 import { SuperAdminLog } from '../types';
 import { 
   ShieldAlert, 

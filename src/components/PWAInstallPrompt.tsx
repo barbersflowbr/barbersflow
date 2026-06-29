@@ -13,7 +13,7 @@ import {
   ChevronDown,
   ArrowRight,
 } from "lucide-react";
-import { Barbearia } from "../lib/db";
+import { Barbearia } from "../lib/db-postgres";
 
 interface PWAInstallPromptProps {
   activeBarbearia: Barbearia | null;

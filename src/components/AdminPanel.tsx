@@ -79,7 +79,7 @@ import {
   parseBarbeariaPlan,
   serializeBarbeariaPlan,
   getRemainingDays
-} from '../lib/db';
+} from '../lib/db-postgres';
 import { 
   addBooking, 
   updateBookingStatus, 

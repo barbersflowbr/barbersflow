@@ -16,7 +16,7 @@ import LandingPage from "./components/LandingPage";
 import AdminPanel from "./components/AdminPanel";
 import ClientPWA from "./components/ClientPWA";
 import SuperAdminPanel from "./components/SuperAdminPanel";
-import { Barbearia } from "./lib/db";
+import { Barbearia } from "./lib/db-postgres";
 
 export default function App() {
   // Navigation states: 'landing' (SaaS site), 'admin' (private dashboard), 'pwa' (mobile booking), 'superadmin' (global admin)
@@ -64,7 +64,7 @@ export default function App() {
       if (session?.user) {
         // Prevent overwriting activeBarbearia if we are on a custom slug route
         const pathname = window.location.pathname;
-        const normalizedPath = pathname.replace(/^\/+|\/+$/g, "").toLowerCase();
+        const normalizedPath = pathname.replace(/^\\/+|\\/+$/g, "").toLowerCase();
 
         if (
           normalizedPath === "" ||
@@ -75,12 +75,9 @@ export default function App() {
           normalizedPath === "bento" ||
           normalizedPath === "pricing"
         ) {
-          const { data } = await supabase
-            .from("barbearias")
-            .select("*")
-            .eq("id", session.user.id)
-            .single();
-          if (data) handleSetActiveBarbearia(data as Barbearia);
+          const { getBarbearia } = await import("./lib/db-postgres");
+          const data = await getBarbearia(session.user.id);
+          if (data) handleSetActiveBarbearia(data);
         }
       }
     };
@@ -100,7 +97,7 @@ export default function App() {
           // Prevent overwriting if we are on a custom slug route
           const pathname = window.location.pathname;
           const normalizedPath = pathname
-            .replace(/^\/+|\/+$/g, "")
+            .replace(/^\\/+|\\/+$/g, "")
             .toLowerCase();
 
           if (
@@ -113,12 +110,9 @@ export default function App() {
             normalizedPath === "pricing"
           ) {
             // If we have a session but no activeBarbearia, try to fetch it
-            const { data } = await supabase
-              .from("barbearias")
-              .select("*")
-              .eq("id", session.user.id)
-              .single();
-            if (data) handleSetActiveBarbearia(data as Barbearia);
+            const { getBarbearia } = await import("./lib/db-postgres");
+            const data = await getBarbearia(session.user.id);
+            if (data) handleSetActiveBarbearia(data);
           }
         }
       });
@@ -170,7 +164,7 @@ export default function App() {
         return;
       }
 
-      const normalizedSlug = pathname.replace(/^\/+|\/+$/g, "").toLowerCase();
+      const normalizedSlug = pathname.replace(/^\\/+|\\/+$/g, "").toLowerCase();
 
       // Check if user is in standalone mode (installed PWA) and landed on root
       const isStandaloneMode =
@@ -230,42 +224,43 @@ export default function App() {
         }
 
         if (normalizedSlug === "barbersflow-demo") {
-          const { mockBarbearia } = await import("./lib/db");
+          // Demo mode - create a mock barbearia
+          const mockBarbearia: Barbearia = {
+            id: "demo-barbearia-id",
+            name: "Barbearia Premium Demo",
+            email: "demo@barbersflow.com",
+            slug: "barbersflow-demo",
+            plan: JSON.stringify({ name: "Pro Flow", status: "trial" }),
+            isOnboarded: true,
+            barbers: [],
+            services: [],
+            createdAt: new Date().toISOString(),
+          };
           handleSetActiveBarbearia(mockBarbearia, false);
           navigateToView("pwa");
           return;
         }
 
-        // 2. Query Supabase
+        // 2. Query PostgreSQL
         try {
-          const { supabase } = await import("./lib/supabase");
-          const { data, error } = await supabase
-            .from("barbearias")
-            .select("*")
-            .eq("slug", normalizedSlug)
-            .single();
-
-          if (data && !error) {
-            handleSetActiveBarbearia(data as Barbearia, false);
+          const { getBarbearia } = await import("./lib/db-postgres");
+          // Note: getBarbearia requires ID, not slug. For slug lookup, we'd need a separate function
+          // For now, fallback to listing
+          const { getAllBarbearias } = await import("./lib/db-postgres");
+          const all = await getAllBarbearias();
+          const matched = all.find(
+            (b) => b.slug && b.slug.toLowerCase() === normalizedSlug,
+          );
+          if (matched) {
+            handleSetActiveBarbearia(matched, false);
             navigateToView("pwa");
           } else {
-            // Check listing as fallback
-            const { getAllBarbearias } = await import("./lib/db");
-            const all = await getAllBarbearias();
-            const matched = all.find(
-              (b) => b.slug && b.slug.toLowerCase() === normalizedSlug,
-            );
-            if (matched) {
-              handleSetActiveBarbearia(matched, false);
-              navigateToView("pwa");
-            } else {
-              navigateToView("landing");
-            }
+            navigateToView("landing");
           }
         } catch (err) {
-          // Fallback listing check on network/parsing failure
+          // Fallback on network/parsing failure
           try {
-            const { getAllBarbearias } = await import("./lib/db");
+            const { getAllBarbearias } = await import("./lib/db-postgres");
             const all = await getAllBarbearias();
             const matched = all.find(
               (b) => b.slug && b.slug.toLowerCase() === normalizedSlug,
@@ -509,3 +504,4 @@ export default function App() {
     </div>
   );
 }
+

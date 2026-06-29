@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Barber, Service, Appointment } from '../types';
-import { updateBarbearia } from '../lib/db';
+import { updateBarbearia } from '../lib/db-postgres';
 import { Plus, Trash, Clock, Scissors, Edit, Save, X, Calendar, Settings, Sparkles, Users } from 'lucide-react';
 import ImageUploader from './ImageUploader';
 
