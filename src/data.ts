@@ -8,9 +8,9 @@ import { PricingPlan } from './types';
 export const pricingPlans: PricingPlan[] = [
   {
     name: 'Standard',
-    price: 'R$ 149',
+    price: 'R$ 89',
     period: '/mês',
-    description: 'Perfeito para barbearias em crescimento que precisam otimizar sua agenda.',
+    description: 'Extremamente atrativo para barbeiros individuais ou duplas que estão começando.',
     features: [
       'Agenda online inteligente e dinâmica',
       'Até 3 profissionais/barbeiros cadastrados',
@@ -23,9 +23,9 @@ export const pricingPlans: PricingPlan[] = [
   },
   {
     name: 'Pro Flow',
-    price: 'R$ 289',
+    price: 'R$ 179',
     period: '/mês',
-    description: 'O plano mais vendido. Potencialize seu negócio e aumente sua retenção.',
+    description: 'O "meio de funil" perfeito. Excelente para barbearias consolidadas de até 8 cadeiras com profissionais ilimitados.',
     features: [
       'Tudo do plano Standard',
       'Profissionais ilimitados',
@@ -39,9 +39,9 @@ export const pricingPlans: PricingPlan[] = [
   },
   {
     name: 'Black Elite',
-    price: 'R$ 499',
+    price: 'R$ 349',
     period: '/mês',
-    description: 'Para redes de barbearia ou estabelecimentos de altíssimo padrão.',
+    description: 'Preço competitivo para redes ou barbearias boutique de altíssimo luxo que demandam múltiplas filiais e IA.',
     features: [
       'Tudo do plano Pro Flow',
       'Múltiplas filiais/unidades',

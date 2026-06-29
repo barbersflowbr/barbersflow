@@ -506,16 +506,27 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
                 </ul>
               </div>
 
-              <button 
-                onClick={() => onNavigate('admin')}
-                className={`w-full py-4.5 rounded-xl font-bold text-sm tracking-wide transition-all duration-300 cursor-pointer ${
-                  plan.popular 
-                    ? 'bg-amber-500 text-black shadow-[0_4px_20px_rgba(245,158,11,0.2)] hover:bg-amber-400' 
-                    : 'bg-white/5 text-white hover:bg-white/10 border border-white/10'
-                }`}
-              >
-                {plan.cta}
-              </button>
+              {plan.cta === 'Falar com Consultor' ? (
+                <a 
+                  href="https://wa.me/5553997126656?text=Ol%C3%A1%2C%20gostaria%20de%20falar%20com%20um%20consultor%20sobre%20o%20BarbersFlow."
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-4.5 rounded-xl font-bold text-sm tracking-wide transition-all duration-300 cursor-pointer bg-white/5 text-white hover:bg-white/10 border border-white/10 text-center block"
+                >
+                  {plan.cta}
+                </a>
+              ) : (
+                <button 
+                  onClick={() => onNavigate('admin')}
+                  className={`w-full py-4.5 rounded-xl font-bold text-sm tracking-wide transition-all duration-300 cursor-pointer ${
+                    plan.popular 
+                      ? 'bg-amber-500 text-black shadow-[0_4px_20px_rgba(245,158,11,0.2)] hover:bg-amber-400' 
+                      : 'bg-white/5 text-white hover:bg-white/10 border border-white/10'
+                  }`}
+                >
+                  {plan.cta}
+                </button>
+              )}
             </div>
           ))}
         </div>

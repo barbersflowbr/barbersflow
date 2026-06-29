@@ -1755,7 +1755,19 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
               className="space-y-6"
             >
               {/* Dynamic quick metrics cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
+                {/* Trial Status */}
+                <div className="p-6 rounded-2xl bg-[#121215] border border-white/5 relative overflow-hidden group">
+                  <div className="flex items-center justify-between text-gray-400 text-xs font-mono mb-4">
+                    <span>TESTE GRÁTIS</span>
+                    <Sparkles className="w-4.5 h-4.5 text-amber-500" />
+                  </div>
+                  <div className="text-3xl font-extrabold text-white">{Math.max(0, 7 - Math.floor((new Date().getTime() - new Date(activeBarbearia?.createdAt || new Date()).getTime()) / (1000 * 60 * 60 * 24)))} dias</div>
+                  <div className="text-[10px] text-gray-400 font-mono mt-2">
+                    restantes no seu período de teste
+                  </div>
+                </div>
+
                 {/* Revenue card */}
                 <div className="p-6 rounded-2xl bg-[#121215] border border-white/5 relative overflow-hidden group">
                   <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-full blur-2xl" />
