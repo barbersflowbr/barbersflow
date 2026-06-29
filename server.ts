@@ -334,6 +334,125 @@ async function startServer() {
     }
   });
 
+  // Dynamic PWA Manifest Endpoint
+  app.get('/manifest.json', async (req, res) => {
+    const slug = req.query.slug as string;
+
+    const defaultManifest = {
+      name: "BarbersFlow - Agendamento de Barbearias",
+      short_name: "BarbersFlow",
+      description: "Plataforma de agendamento online e gestão para barbearias de forma simples e rápida.",
+      start_url: "/",
+      id: "/",
+      display: "standalone",
+      orientation: "portrait",
+      background_color: "#0E0E11",
+      theme_color: "#F59E0B",
+      categories: ["business", "utilities"],
+      icons: [
+        {
+          src: "/logo.svg",
+          sizes: "192x192",
+          type: "image/svg+xml",
+          purpose: "any"
+        },
+        {
+          src: "/logo.svg",
+          sizes: "512x512",
+          type: "image/svg+xml",
+          purpose: "any"
+        },
+        {
+          src: "/logo.svg",
+          sizes: "192x192",
+          type: "image/svg+xml",
+          purpose: "maskable"
+        },
+        {
+          src: "/logo.svg",
+          sizes: "512x512",
+          type: "image/svg+xml",
+          purpose: "maskable"
+        }
+      ]
+    };
+
+    if (!slug) {
+      res.json(defaultManifest);
+      return;
+    }
+
+    try {
+      const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+
+      if (!supabaseUrl || !supabaseAnonKey) {
+        console.warn("Supabase credentials missing on server. Serving default manifest.");
+        res.json(defaultManifest);
+        return;
+      }
+
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
+
+      const { data, error } = await supabaseClient
+        .from('barbearias')
+        .select('name, slug, logo')
+        .eq('slug', slug.toLowerCase())
+        .single();
+
+      if (error || !data) {
+        console.warn(`Could not find barbearia with slug "${slug}" for dynamic manifest, serving default.`, error?.message);
+        res.json(defaultManifest);
+        return;
+      }
+
+      const customManifest = {
+        name: data.name,
+        short_name: data.name.split(" ")[0] || data.name,
+        description: `Agende seu horário na ${data.name} via BarbersFlow.`,
+        start_url: `/${data.slug}`,
+        id: `/${data.slug}`,
+        display: "standalone",
+        orientation: "portrait",
+        background_color: "#0E0E11",
+        theme_color: "#F59E0B",
+        categories: ["business", "utilities"],
+        icons: [
+          {
+            src: data.logo || "/logo.svg",
+            sizes: "192x192",
+            type: data.logo ? "image/png" : "image/svg+xml",
+            purpose: "any"
+          },
+          {
+            src: data.logo || "/logo.svg",
+            sizes: "512x512",
+            type: data.logo ? "image/png" : "image/svg+xml",
+            purpose: "any"
+          },
+          {
+            src: data.logo || "/logo.svg",
+            sizes: "192x192",
+            type: data.logo ? "image/png" : "image/svg+xml",
+            purpose: "maskable"
+          },
+          {
+            src: data.logo || "/logo.svg",
+            sizes: "512x512",
+            type: data.logo ? "image/png" : "image/svg+xml",
+            purpose: "maskable"
+          }
+        ]
+      };
+
+      res.json(customManifest);
+    } catch (err) {
+      console.error("Error creating dynamic manifest:", err);
+      res.json(defaultManifest);
+    }
+  });
+
   // Integrate Vite as a middleware for development
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

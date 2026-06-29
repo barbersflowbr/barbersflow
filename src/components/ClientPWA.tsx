@@ -37,6 +37,8 @@ import {
   mockBarbearia,
 } from "../lib/db";
 import { supabase } from "../lib/supabase";
+import { PWAInstallPrompt } from "./PWAInstallPrompt";
+import { PWAShellSkeleton } from "./LoadingSkeleton";
 
 function generateTimeSlots(
   start: string,
@@ -88,6 +90,46 @@ function generateDateOptions() {
   }
   return options;
 }
+
+// Haptic feedback helper using Web Vibration API
+const triggerVibration = (
+  type: "light" | "medium" | "heavy" | "success" | "error" | "double",
+) => {
+  if (
+    typeof window !== "undefined" &&
+    window.navigator &&
+    window.navigator.vibrate
+  ) {
+    try {
+      switch (type) {
+        case "light":
+          window.navigator.vibrate(15);
+          break;
+        case "medium":
+          window.navigator.vibrate(30);
+          break;
+        case "heavy":
+          window.navigator.vibrate(60);
+          break;
+        case "double":
+          window.navigator.vibrate([15, 30, 15]);
+          break;
+        case "success":
+          // Festive high-frequency pulse sequence
+          window.navigator.vibrate([40, 40, 40, 40, 80]);
+          break;
+        case "error":
+          // Harsh triple vibration pulse for errors/warnings
+          window.navigator.vibrate([60, 40, 60, 40, 60]);
+          break;
+        default:
+          window.navigator.vibrate(20);
+      }
+    } catch (e) {
+      console.warn("Vibration API not supported or blocked by user/browser:", e);
+    }
+  }
+};
 
 interface ClientPWAProps {
   onNavigate: (view: "landing" | "admin" | "pwa" | "superadmin") => void;
@@ -162,6 +204,81 @@ export default function ClientPWA({
     };
     checkSlug();
   }, [activeBarbearia?.slug, onSetActiveBarbearia]);
+
+  // Dynamic PWA Manifest and Document Title/Favicon updater
+  useEffect(() => {
+    if (activeBarbearia) {
+      // Find the existing manifest link tag or create one
+      let linkElement = document.querySelector('link[rel="manifest"]');
+      if (!linkElement) {
+        linkElement = document.createElement("link");
+        linkElement.setAttribute("rel", "manifest");
+        document.head.appendChild(linkElement);
+      }
+
+      const newManifestUrl = `/manifest.json?slug=${encodeURIComponent(
+        activeBarbearia.slug,
+      )}`;
+      linkElement.setAttribute("href", newManifestUrl);
+
+      // Update apple-mobile-web-app-title to the active Barbearia name
+      let appleTitleElement = document.querySelector(
+        'meta[name="apple-mobile-web-app-title"]',
+      );
+      if (!appleTitleElement) {
+        appleTitleElement = document.createElement("meta");
+        appleTitleElement.setAttribute("name", "apple-mobile-web-app-title");
+        document.head.appendChild(appleTitleElement);
+      }
+      appleTitleElement.setAttribute("content", activeBarbearia.name);
+
+      // Dynamically update document title to Barbearia name
+      const originalTitle = document.title;
+      document.title = `${activeBarbearia.name} - Agendamento Online | BarbersFlow`;
+
+      // Update favicons and apple-touch-icon if the barbearia has a custom logo
+      let originalIcon: string | null = null;
+      let originalAppleIcon: string | null = null;
+
+      if (activeBarbearia.logo) {
+        const iconElement = document.querySelector('link[rel="icon"]');
+        if (iconElement) {
+          originalIcon = iconElement.getAttribute("href");
+          iconElement.setAttribute("href", activeBarbearia.logo);
+        }
+        const appleIconElement = document.querySelector(
+          'link[rel="apple-touch-icon"]',
+        );
+        if (appleIconElement) {
+          originalAppleIcon = appleIconElement.getAttribute("href");
+          appleIconElement.setAttribute("href", activeBarbearia.logo);
+        }
+      }
+
+      return () => {
+        // Restore defaults on unmount or barbearia change
+        const defaultLinkElement = document.querySelector(
+          'link[rel="manifest"]',
+        );
+        if (defaultLinkElement) {
+          defaultLinkElement.setAttribute("href", "/manifest.json");
+        }
+        document.title = originalTitle;
+
+        if (originalIcon) {
+          const iconElement = document.querySelector('link[rel="icon"]');
+          if (iconElement) iconElement.setAttribute("href", originalIcon);
+        }
+        if (originalAppleIcon) {
+          const appleIconElement = document.querySelector(
+            'link[rel="apple-touch-icon"]',
+          );
+          if (appleIconElement)
+            appleIconElement.setAttribute("href", originalAppleIcon);
+        }
+      };
+    }
+  }, [activeBarbearia]);
 
   // Real PWA installation states & hooks
   const [pwaInstalled, setPwaInstalled] = useState(false);
@@ -401,6 +518,7 @@ export default function ClientPWA({
     try {
       const b = await addBooking(activeBarbearia.id, payload);
       setConfirmedBooking(b);
+      triggerVibration("success");
       setStep(5); // Go to success screen
     } catch (err: any) {
       console.error(err);
@@ -408,6 +526,7 @@ export default function ClientPWA({
         err.message ||
           "Este horário acabou de ser preenchido por outro cliente. Por favor, retorne e selecione outro horário.",
       );
+      triggerVibration("error");
       setStep(3); // Kick back to select time step
     } finally {
       setIsSubmitting(false);
@@ -415,6 +534,7 @@ export default function ClientPWA({
   };
 
   const resetFlow = () => {
+    triggerVibration("double");
     setSelectedService(null);
     setSelectedBarber(null);
     setSelectedTime(null);
@@ -431,16 +551,7 @@ export default function ClientPWA({
       : services.filter((s) => s.category === activeCategory);
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen bg-[#0A0A0B] text-gray-100 flex items-center justify-center p-4">
-        <div className="text-center space-y-4">
-          <RefreshCw className="w-8 h-8 text-amber-500 animate-spin mx-auto" />
-          <p className="text-xs text-gray-400 font-mono tracking-widest uppercase">
-            Carregando Aplicativo...
-          </p>
-        </div>
-      </div>
-    );
+    return <PWAShellSkeleton />;
   }
 
   if (!activeBarbearia) {
@@ -559,7 +670,10 @@ export default function ClientPWA({
           </div>
           {step > 0 && step < 5 && (
             <button
-              onClick={() => setStep((prev) => (prev - 1) as any)}
+              onClick={() => {
+                triggerVibration("double");
+                setStep((prev) => (prev - 1) as any);
+              }}
               className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 text-[10px] font-semibold flex items-center gap-1 transition-all cursor-pointer"
             >
               <ChevronLeft className="w-3 h-3" />
@@ -730,7 +844,10 @@ export default function ClientPWA({
                       Fazer Reserva
                     </span>
                     <button
-                      onClick={() => setStep(1)}
+                      onClick={() => {
+                        triggerVibration("medium");
+                        setStep(1);
+                      }}
                       className="w-full py-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-extrabold tracking-wider uppercase flex items-center justify-center gap-2 shadow-[0_4px_25px_rgba(245,158,11,0.25)] hover:scale-[1.01] active:scale-[0.99] transition-all cursor-pointer"
                     >
                       <Scissors className="w-4.5 h-4.5 text-black stroke-[3px]" />
@@ -759,6 +876,7 @@ export default function ClientPWA({
                           <div
                             key={barber.id}
                             onClick={() => {
+                              triggerVibration("medium");
                               setSelectedBarber(barber);
                               setStep(1); // Jump to select service
                             }}
@@ -802,6 +920,7 @@ export default function ClientPWA({
                           <div
                             key={service.id}
                             onClick={() => {
+                              triggerVibration("medium");
                               setSelectedService(service);
                               setStep(2); // Set service and jump to choose barber
                             }}
@@ -857,7 +976,10 @@ export default function ClientPWA({
                 ).map((cat) => (
                   <button
                     key={cat}
-                    onClick={() => setActiveCategory(cat)}
+                    onClick={() => {
+                      triggerVibration("light");
+                      setActiveCategory(cat);
+                    }}
                     className={`px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-wider uppercase font-mono whitespace-nowrap transition-all cursor-pointer ${
                       activeCategory === cat
                         ? "bg-amber-500 text-black font-extrabold shadow-sm"
@@ -878,7 +1000,10 @@ export default function ClientPWA({
                   return (
                     <div
                       key={service.id}
-                      onClick={() => setSelectedService(service)}
+                      onClick={() => {
+                        triggerVibration("medium");
+                        setSelectedService(service);
+                      }}
                       className={`p-4 rounded-2xl border transition-all duration-300 cursor-pointer relative overflow-hidden flex flex-col justify-between ${
                         isSelected
                           ? "bg-amber-500/10 border-amber-500 shadow-[0_4px_15px_rgba(245,158,11,0.05)] pl-5"
@@ -927,7 +1052,10 @@ export default function ClientPWA({
               <div className="mt-4 pt-4 bg-gradient-to-t from-[#0E0E10] sticky bottom-0">
                 <button
                   disabled={!selectedService}
-                  onClick={() => setStep(2)}
+                  onClick={() => {
+                    triggerVibration("medium");
+                    setStep(2);
+                  }}
                   className="w-full py-4 rounded-xl bg-amber-500 text-black text-xs font-bold tracking-wider flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed shadow-[0_4px_20px_rgba(245,158,11,0.2)]"
                 >
                   Próximo: Escolher Barbeiro
@@ -967,7 +1095,10 @@ export default function ClientPWA({
                     return (
                       <div
                         key={barber.id}
-                        onClick={() => setSelectedBarber(barber)}
+                        onClick={() => {
+                          triggerVibration("medium");
+                          setSelectedBarber(barber);
+                        }}
                         className={`p-4 rounded-2xl border transition-all duration-300 cursor-pointer relative overflow-hidden flex items-center gap-4 ${
                           isSelected
                             ? "bg-amber-500/10 border-amber-500 shadow-[0_4px_15px_rgba(245,158,11,0.05)] pl-5"
@@ -1015,7 +1146,10 @@ export default function ClientPWA({
               <div className="mt-4 pt-4 bg-gradient-to-t from-[#0E0E10] sticky bottom-0">
                 <button
                   disabled={!selectedBarber}
-                  onClick={() => setStep(3)}
+                  onClick={() => {
+                    triggerVibration("medium");
+                    setStep(3);
+                  }}
                   className="w-full py-4 rounded-xl bg-amber-500 text-black text-xs font-bold tracking-wider flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed shadow-[0_4px_20px_rgba(245,158,11,0.2)]"
                 >
                   Próximo: Escolher Horário
@@ -1066,6 +1200,7 @@ export default function ClientPWA({
                         <button
                           key={opt.fullDate}
                           onClick={() => {
+                            triggerVibration("medium");
                             setSelectedDate(opt.fullDate);
                             setSelectedTime(""); // Reset selected time on date change
                           }}
@@ -1153,7 +1288,10 @@ export default function ClientPWA({
                             <button
                               key={time}
                               disabled={isUnavailable}
-                              onClick={() => setSelectedTime(time)}
+                              onClick={() => {
+                                triggerVibration("medium");
+                                setSelectedTime(time);
+                              }}
                               className={`p-3 rounded-xl font-mono text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
                                 isUnavailable
                                   ? "bg-neutral-900/40 border border-neutral-900 text-gray-700 cursor-not-allowed opacity-50"
@@ -1184,7 +1322,10 @@ export default function ClientPWA({
                         isCheckingSlots ||
                         !isWorkingDaySelected
                       }
-                      onClick={() => setStep(4)}
+                      onClick={() => {
+                        triggerVibration("medium");
+                        setStep(4);
+                      }}
                       className="w-full py-4 rounded-xl bg-amber-500 text-black text-xs font-bold tracking-wider flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed shadow-[0_4px_20px_rgba(245,158,11,0.25)]"
                     >
                       Próximo: Dados & Confirmar
@@ -1447,16 +1588,20 @@ export default function ClientPWA({
 
                 <div className="flex gap-2">
                   <button
-                    onClick={() =>
-                      alert("Link de agendamento compartilhado com sucesso!")
-                    }
+                    onClick={() => {
+                      triggerVibration("medium");
+                      alert("Link de agendamento compartilhado com sucesso!");
+                    }}
                     className="flex-1 py-3.5 rounded-xl bg-black/40 border border-white/5 hover:bg-black text-[11px] text-gray-400 hover:text-white transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Share2 className="w-3.5 h-3.5" />
                     Compartilhar
                   </button>
                   <button
-                    onClick={() => onNavigate("admin")}
+                    onClick={() => {
+                      triggerVibration("medium");
+                      onNavigate("admin");
+                    }}
                     className="flex-1 py-3.5 rounded-xl bg-black/40 border border-white/5 hover:bg-black text-[11px] text-gray-400 hover:text-white transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Calendar className="w-3.5 h-3.5" />
@@ -1501,6 +1646,7 @@ export default function ClientPWA({
     return (
       <div className="min-h-[100dvh] w-full bg-[#0E0E10] flex justify-center selection:bg-amber-500 selection:text-black">
         {pwaContent}
+        <PWAInstallPrompt activeBarbearia={activeBarbearia} />
       </div>
     );
   }
@@ -1596,6 +1742,7 @@ export default function ClientPWA({
         {/* Close Right Side div */}
       </div>{" "}
       {/* Close Outer Flex Container */}
+      <PWAInstallPrompt activeBarbearia={activeBarbearia} />
     </div>
   );
 }

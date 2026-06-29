@@ -1,5 +1,48 @@
 import { supabase } from './supabase';
-import { Appointment, Barber, Service, InventoryItem, Client } from '../types';
+import { Appointment, Barber, Service, InventoryItem, Client, SuperAdminLog } from '../types';
+
+export interface BarbeariaPlanInfo {
+  name: string; // 'Standard' | 'Pro Flow' | 'Black Elite'
+  status: 'trial' | 'active' | 'suspended' | 'expired';
+  trialEndsAt?: string; // ISO string
+  planEndsAt?: string; // ISO string
+}
+
+export function parseBarbeariaPlan(planStr: string | undefined): BarbeariaPlanInfo {
+  if (!planStr) {
+    return { name: 'Standard', status: 'trial' };
+  }
+  try {
+    if (planStr.trim().startsWith('{')) {
+      const parsed = JSON.parse(planStr);
+      return {
+        name: parsed.name || 'Standard',
+        status: parsed.status || 'trial',
+        trialEndsAt: parsed.trialEndsAt,
+        planEndsAt: parsed.planEndsAt,
+      };
+    }
+  } catch (e) {
+    // Treat as simple string
+  }
+  return {
+    name: planStr,
+    status: planStr === 'Standard' ? 'trial' : 'active'
+  };
+}
+
+export function serializeBarbeariaPlan(info: BarbeariaPlanInfo): string {
+  return JSON.stringify(info);
+}
+
+export function getRemainingDays(endsAtStr: string | undefined): number {
+  if (!endsAtStr) return 0;
+  const endsAt = new Date(endsAtStr);
+  const now = new Date();
+  const diffTime = endsAt.getTime() - now.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  return diffDays > 0 ? diffDays : 0;
+}
 
 export interface Barbearia {
   id: string;
@@ -158,12 +201,22 @@ export async function registerBarbearia(
     throw new Error('Erro ao criar usuário: ID não retornado.');
   }
 
+  const defaultTrialDays = 14;
+  const trialEnds = new Date();
+  trialEnds.setDate(trialEnds.getDate() + defaultTrialDays);
+
+  const planInfo: BarbeariaPlanInfo = {
+    name: plan || 'Standard',
+    status: 'trial',
+    trialEndsAt: trialEnds.toISOString(),
+  };
+
   const newBarbearia: Barbearia = {
     id: userId,
     name,
     email: cleanEmail,
     slug: cleanSlug,
-    plan,
+    plan: serializeBarbeariaPlan(planInfo),
     isOnboarded: false,
     barbers: [], 
     services: [], 
@@ -212,12 +265,22 @@ export async function loginBarbearia(email: string, password: string): Promise<B
 
   if (dbError && dbError.code === 'PGRST116') {
     // Record not found. Create it now!
+    const defaultTrialDays = 14;
+    const trialEnds = new Date();
+    trialEnds.setDate(trialEnds.getDate() + defaultTrialDays);
+
+    const planInfo: BarbeariaPlanInfo = {
+      name: 'Pro Flow',
+      status: 'trial',
+      trialEndsAt: trialEnds.toISOString(),
+    };
+
     const newBarbearia: Barbearia = {
       id: authData.user.id,
       name: 'Minha Barbearia',
       email: cleanEmail,
       slug: authData.user.id.substring(0, 8),
-      plan: 'Pro Flow',
+      plan: serializeBarbeariaPlan(planInfo),
       isOnboarded: false,
       barbers: [], 
       services: [], 
@@ -452,6 +515,22 @@ export async function updateBarbearia(
   }
 }
 
+// Delete barbearia profile
+export async function deleteBarbearia(barbeariaId: string): Promise<void> {
+  if (barbeariaId === 'demo-barbearia-id') {
+    return;
+  }
+
+  const { error } = await supabase
+    .from(BARBEARIAS_COL)
+    .delete()
+    .eq('id', barbeariaId);
+
+  if (error) {
+    handleSupabaseError(error, OperationType.DELETE, BARBEARIAS_COL);
+  }
+}
+
 // Get barbearia profile
 export async function getBarbearia(barbeariaId: string): Promise<Barbearia | null> {
   if (barbeariaId === 'demo-barbearia-id') {
@@ -494,4 +573,81 @@ export async function getUnavailableSlots(
 
   return (data || []).map(d => d.time);
 }
+
+// SuperAdmin Logs database actions
+const LOGS_COL = 'superadmin_logs';
+
+export async function createSuperAdminLog(log: Omit<SuperAdminLog, 'id' | 'createdAt'>): Promise<void> {
+  try {
+    const { error } = await supabase
+      .from(LOGS_COL)
+      .insert({
+        barbeariaId: log.barbeariaId,
+        barbeariaName: log.barbeariaName,
+        action: log.action,
+        details: log.details,
+        performedBy: log.performedBy || 'superadmin',
+        createdAt: new Date().toISOString()
+      });
+    if (error) {
+      console.warn('Failing to write superadmin log in DB, falling back to local simulation:', error.message);
+      const localLogs = JSON.parse(localStorage.getItem('superadmin_local_logs') || '[]');
+      localLogs.unshift({
+        ...log,
+        id: crypto.randomUUID(),
+        createdAt: new Date().toISOString()
+      });
+      localStorage.setItem('superadmin_local_logs', JSON.stringify(localLogs.slice(0, 200)));
+    }
+  } catch (err) {
+    console.warn('Error saving log to DB:', err);
+    try {
+      const localLogs = JSON.parse(localStorage.getItem('superadmin_local_logs') || '[]');
+      localLogs.unshift({
+        ...log,
+        id: crypto.randomUUID(),
+        createdAt: new Date().toISOString()
+      });
+      localStorage.setItem('superadmin_local_logs', JSON.stringify(localLogs.slice(0, 200)));
+    } catch (_) {}
+  }
+}
+
+export async function getSuperAdminLogs(): Promise<SuperAdminLog[]> {
+  try {
+    const { data, error } = await supabase
+      .from(LOGS_COL)
+      .select('*')
+      .order('createdAt', { ascending: false })
+      .limit(100);
+
+    if (error) {
+      console.warn('Failing to read superadmin logs from DB, loading from local simulation:', error.message);
+      return JSON.parse(localStorage.getItem('superadmin_local_logs') || '[]');
+    }
+
+    const localLogs = JSON.parse(localStorage.getItem('superadmin_local_logs') || '[]');
+    const dbLogs = (data || []).map(item => ({
+      id: item.id,
+      barbeariaId: item.barbeariaId,
+      barbeariaName: item.barbeariaName,
+      action: item.action,
+      details: item.details,
+      performedBy: item.performedBy,
+      createdAt: item.createdAt
+    }));
+
+    const allLogs = [...dbLogs, ...localLogs];
+    allLogs.sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime());
+    return allLogs.slice(0, 150);
+  } catch (err) {
+    console.warn('Error reading logs:', err);
+    try {
+      return JSON.parse(localStorage.getItem('superadmin_local_logs') || '[]');
+    } catch (_) {
+      return [];
+    }
+  }
+}
+
 

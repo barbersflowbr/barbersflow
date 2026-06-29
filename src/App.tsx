@@ -23,6 +23,24 @@ export default function App() {
   const [currentView, setCurrentView] = useState<
     "landing" | "admin" | "pwa" | "superadmin"
   >("landing");
+  const [direction, setDirection] = useState<"forward" | "backward">("forward");
+
+  const VIEW_INDICES = {
+    landing: 0,
+    admin: 1,
+    pwa: 2,
+    superadmin: 3,
+  };
+
+  const navigateToView = (newView: "landing" | "admin" | "pwa" | "superadmin") => {
+    setCurrentView((prev) => {
+      const currentIndex = VIEW_INDICES[prev] ?? 0;
+      const newIndex = VIEW_INDICES[newView] ?? 0;
+      setDirection(newIndex >= currentIndex ? "forward" : "backward");
+      return newView;
+    });
+  };
+
   const [activeBarbearia, setActiveBarbearia] = useState<Barbearia | null>(
     () => {
       try {
@@ -138,17 +156,17 @@ export default function App() {
       const hash = window.location.hash;
 
       if (pathname === "/superadmin" || hash === "#superadmin") {
-        setCurrentView("superadmin");
+        navigateToView("superadmin");
         return;
       }
 
       if (pathname === "/admin" || hash === "#admin") {
-        setCurrentView("admin");
+        navigateToView("admin");
         return;
       }
 
       if (pathname === "/pwa" || hash === "#pwa") {
-        setCurrentView("pwa");
+        navigateToView("pwa");
         return;
       }
 
@@ -166,7 +184,7 @@ export default function App() {
             if (localBarbearia && localBarbearia.slug) {
               window.history.replaceState({}, "", `/${localBarbearia.slug}`);
               handleSetActiveBarbearia(localBarbearia, false);
-              setCurrentView("pwa");
+              navigateToView("pwa");
               return;
             }
           } catch {}
@@ -198,7 +216,7 @@ export default function App() {
           localBarbearia.slug.toLowerCase() === normalizedSlug
         ) {
           handleSetActiveBarbearia(localBarbearia, false);
-          setCurrentView("pwa");
+          navigateToView("pwa");
           return;
         }
 
@@ -207,14 +225,14 @@ export default function App() {
           activeBarbearia.slug &&
           activeBarbearia.slug.toLowerCase() === normalizedSlug
         ) {
-          setCurrentView("pwa");
+          navigateToView("pwa");
           return;
         }
 
         if (normalizedSlug === "barbersflow-demo") {
           const { mockBarbearia } = await import("./lib/db");
           handleSetActiveBarbearia(mockBarbearia, false);
-          setCurrentView("pwa");
+          navigateToView("pwa");
           return;
         }
 
@@ -229,7 +247,7 @@ export default function App() {
 
           if (data && !error) {
             handleSetActiveBarbearia(data as Barbearia, false);
-            setCurrentView("pwa");
+            navigateToView("pwa");
           } else {
             // Check listing as fallback
             const { getAllBarbearias } = await import("./lib/db");
@@ -239,9 +257,9 @@ export default function App() {
             );
             if (matched) {
               handleSetActiveBarbearia(matched, false);
-              setCurrentView("pwa");
+              navigateToView("pwa");
             } else {
-              setCurrentView("landing");
+              navigateToView("landing");
             }
           }
         } catch (err) {
@@ -254,18 +272,18 @@ export default function App() {
             );
             if (matched) {
               handleSetActiveBarbearia(matched, false);
-              setCurrentView("pwa");
+              navigateToView("pwa");
             } else {
-              setCurrentView("landing");
+              navigateToView("landing");
             }
           } catch {
-            setCurrentView("landing");
+            navigateToView("landing");
           }
         }
         return;
       }
 
-      setCurrentView("landing");
+      navigateToView("landing");
     };
 
     handleNavigation();
@@ -283,24 +301,51 @@ export default function App() {
   }, []);
 
   const handleNavigate = (view: "landing" | "admin" | "pwa" | "superadmin") => {
-    setCurrentView(view);
+    navigateToView(view);
     const path = view === "landing" ? "/" : `/${view}`;
     window.history.pushState({}, "", path);
     setIsNavigatorExpanded(false); // Collapses the navigator whenever we change page/view
+  };
+
+  const pageVariants = {
+    initial: (dir: "forward" | "backward") => ({
+      opacity: 0,
+      x: dir === "forward" ? 60 : -60,
+      scale: 0.98,
+    }),
+    animate: {
+      opacity: 1,
+      x: 0,
+      scale: 1,
+    },
+    exit: (dir: "forward" | "backward") => ({
+      opacity: 0,
+      x: dir === "forward" ? -60 : 60,
+      scale: 0.98,
+    }),
+  };
+
+  const pageTransition = {
+    type: "spring",
+    stiffness: 350,
+    damping: 32,
+    mass: 0.8,
   };
 
   return (
     <div className="min-h-screen bg-[#0A0A0B] text-gray-100 flex flex-col justify-between relative selection:bg-amber-500 selection:text-black">
       {/* Dynamic Screen Transition and Rendering */}
       <div className="flex-1 w-full h-full relative">
-        <AnimatePresence mode="wait">
+        <AnimatePresence mode="wait" custom={direction}>
           {currentView === "landing" && (
             <motion.div
               key="landing"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ duration: 0.35, ease: "easeInOut" }}
+              custom={direction}
+              variants={pageVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              transition={pageTransition}
               className="w-full"
             >
               <LandingPage onNavigate={handleNavigate} />
@@ -310,10 +355,12 @@ export default function App() {
           {currentView === "admin" && (
             <motion.div
               key="admin"
-              initial={{ opacity: 0, scale: 0.99 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.99 }}
-              transition={{ duration: 0.3, ease: "easeOut" }}
+              custom={direction}
+              variants={pageVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              transition={pageTransition}
               className="w-full"
             >
               <AdminPanel
@@ -327,10 +374,12 @@ export default function App() {
           {currentView === "pwa" && (
             <motion.div
               key="pwa"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.4, ease: "circOut" }}
+              custom={direction}
+              variants={pageVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              transition={pageTransition}
               className="w-full h-full"
             >
               <ClientPWA
@@ -350,10 +399,12 @@ export default function App() {
           {currentView === "superadmin" && (
             <motion.div
               key="superadmin"
-              initial={{ opacity: 0, scale: 0.99 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.99 }}
-              transition={{ duration: 0.3, ease: "easeOut" }}
+              custom={direction}
+              variants={pageVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              transition={pageTransition}
               className="w-full bg-white h-full min-h-[100dvh]"
             >
               <SuperAdminPanel

@@ -83,3 +83,14 @@ export interface PricingPlan {
   popular: boolean;
   cta: string;
 }
+
+export interface SuperAdminLog {
+  id?: string;
+  barbeariaId?: string | null;
+  barbeariaName?: string | null;
+  action: string; // 'plan_change' | 'status_change' | 'expiration_change' | 'onboarding_toggle' | 'barbearia_delete' | etc.
+  details: string;
+  performedBy?: string;
+  createdAt?: string;
+}
+
