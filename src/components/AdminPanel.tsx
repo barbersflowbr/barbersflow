@@ -55,7 +55,8 @@ import {
   QrCode,
   Printer,
   Download,
-  MessageCircle
+  MessageCircle,
+  Maximize2
 } from 'lucide-react';
 import { initialAvailableHours } from '../data';
 import { Appointment, Barber, Service, InventoryItem } from '../types';
@@ -77,7 +78,7 @@ import {
 } from '../lib/db';
 
 function get7DaysWindow(anchorDateStr: string) {
-  const dates: { dateStr: string; label: string }[] = [];
+  const dates: { dateStr: string; label: string; matchPrefix: string }[] = [];
   const parts = anchorDateStr.split('-');
   const anchor = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
   
@@ -89,7 +90,43 @@ function get7DaysWindow(anchorDateStr: string) {
     const dd = String(d.getDate()).padStart(2, '0');
     const dateStr = `${yyyy}-${mm}-${dd}`;
     const label = d.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric' });
-    dates.push({ dateStr, label });
+    dates.push({ dateStr, label, matchPrefix: dateStr });
+  }
+  return dates;
+}
+
+function get30DaysWindow(anchorDateStr: string) {
+  const dates: { dateStr: string; label: string; matchPrefix: string }[] = [];
+  const parts = anchorDateStr.split('-');
+  const anchor = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+  
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(anchor.getTime());
+    d.setDate(anchor.getDate() - i);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const dateStr = `${yyyy}-${mm}-${dd}`;
+    // Show label only every few days to avoid crowding, or just show day/month
+    const label = d.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' });
+    dates.push({ dateStr, label, matchPrefix: dateStr });
+  }
+  return dates;
+}
+
+function get12MonthsWindow(anchorDateStr: string) {
+  const dates: { dateStr: string; label: string; matchPrefix: string }[] = [];
+  const parts = anchorDateStr.split('-');
+  const anchor = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+  
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(anchor.getTime());
+    d.setMonth(anchor.getMonth() - i);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dateStr = `${yyyy}-${mm}`;
+    const label = d.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' });
+    dates.push({ dateStr, label, matchPrefix: dateStr });
   }
   return dates;
 }
@@ -284,6 +321,16 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
   const [newClientPhone, setNewClientPhone] = useState('');
   const [newClientEmail, setNewClientEmail] = useState('');
   const [isSavingClient, setIsSavingClient] = useState(false);
+  const [isChartExpanded, setIsChartExpanded] = useState(false);
+  const [chartPeriod, setChartPeriod] = useState<'semanal' | 'mensal' | 'anual'>('semanal');
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => {
+      setToast(null);
+    }, 3000);
+  };
 
   // Dynamic references based on logged-in barbearia
   const barbers = activeBarbearia?.barbers || [];
@@ -836,9 +883,11 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
   const handleUpdateStatus = async (bookingId: string, newStatus: 'Ocupado' | 'Concluído' | 'Livre') => {
     try {
       await updateBookingStatus(bookingId, newStatus as any);
+      showToast(`Status atualizado para ${newStatus}`, 'success');
     } catch (err: any) {
       console.error(err);
       alert('Erro ao atualizar status: ' + err.message);
+      showToast('Erro ao atualizar status', 'error');
     }
   };
 
@@ -854,6 +903,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
     const fullPhone = phoneDigits.startsWith('55') ? phoneDigits : (phoneDigits.length >= 10 ? `55${phoneDigits}` : phoneDigits);
     const url = `https://wa.me/${fullPhone}?text=${encodeURIComponent(message)}`;
     window.open(url, '_blank');
+    showToast('Confirmação enviada com sucesso!', 'success');
   };
 
   // Delete/Cancel booking
@@ -861,9 +911,11 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
     if (!confirm('Deseja realmente cancelar este agendamento?')) return;
     try {
       await deleteBookingFromDb(bookingId);
+      showToast('Agendamento cancelado com sucesso!', 'success');
     } catch (err: any) {
       console.error(err);
       alert('Erro ao cancelar agendamento: ' + err.message);
+      showToast('Erro ao cancelar agendamento', 'error');
     }
   };
 
@@ -891,6 +943,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
       setNewClientName('');
       setNewClientPhone('');
       setNewClientEmail('');
+      showToast('Cliente adicionado com sucesso!', 'success');
       
     } catch (err: any) {
       console.error(err);
@@ -926,8 +979,10 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
       setIsBookModalOpen(false);
       setClientName('');
       setClientPhone('');
+      showToast(isBlockSlotMode ? 'Horário bloqueado com sucesso!' : 'Agendamento criado com sucesso!', 'success');
     } catch (err: any) {
       alert(err.message || 'Erro ao cadastrar agendamento');
+      showToast('Erro ao cadastrar agendamento', 'error');
     }
   };
 
@@ -974,12 +1029,17 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
   const pendingBookingsTotal = bookings.filter(b => b.status === 'Ocupado').length;
   const totalUniqueClients = Array.from(new Set(bookings.filter(b => b.clientName).map(b => b.clientPhone || b.clientName))).length;
 
-  // Calculate 7-day chart data based on activeBarbearia settings & bookings
-  const rolling7Days = get7DaysWindow(selectedDate);
-  const chartData = rolling7Days.map(({ dateStr, label }) => {
-    const dayBookings = bookings.filter(b => b.date === dateStr && b.status !== 'Livre');
-    const agendamentos = dayBookings.length;
-    const receita = dayBookings.reduce((sum, b) => {
+  // Calculate chart data based on activeBarbearia settings & bookings
+  const windowData = chartPeriod === 'semanal' 
+    ? get7DaysWindow(selectedDate) 
+    : chartPeriod === 'mensal' 
+      ? get30DaysWindow(selectedDate)
+      : get12MonthsWindow(selectedDate);
+
+  const chartData = windowData.map(({ dateStr, label, matchPrefix }) => {
+    const periodBookings = bookings.filter(b => b.date.startsWith(matchPrefix) && b.status !== 'Livre');
+    const agendamentos = periodBookings.length;
+    const receita = periodBookings.reduce((sum, b) => {
       const service = services.find(s => s.id === b.serviceId);
       return sum + (service ? Number(service.price) : 0);
     }, 0);
@@ -1869,32 +1929,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
         {/* Content Scroll Container */}
         <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6 print:overflow-visible print:p-0">
           
-          {/* Global Quick Metrics Card */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-[#121215] p-5 rounded-2xl border border-white/5 shadow-lg print:hidden">
-            <div className="flex flex-col gap-1 border-b md:border-b-0 md:border-r border-white/5 pb-4 md:pb-0 md:pr-4">
-              <span className="text-[10px] text-gray-500 font-mono uppercase tracking-widest flex items-center gap-1.5">
-                <DollarSign className="w-3.5 h-3.5 text-emerald-500" />
-                Faturamento do Mês
-              </span>
-              <span className="text-2xl font-extrabold text-white">R$ {monthlyRevenue.toFixed(2)}</span>
-            </div>
-            
-            <div className="flex flex-col gap-1 border-b md:border-b-0 md:border-r border-white/5 pb-4 md:pb-0 md:px-4">
-              <span className="text-[10px] text-gray-500 font-mono uppercase tracking-widest flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-amber-500" />
-                Agendamentos Pendentes
-              </span>
-              <span className="text-2xl font-extrabold text-white">{pendingBookingsTotal}</span>
-            </div>
-            
-            <div className="flex flex-col gap-1 pt-4 md:pt-0 md:pl-4">
-              <span className="text-[10px] text-gray-500 font-mono uppercase tracking-widest flex items-center gap-1.5">
-                <Users className="w-3.5 h-3.5 text-blue-500" />
-                Total de Clientes
-              </span>
-              <span className="text-2xl font-extrabold text-white">{totalUniqueClients}</span>
-            </div>
-          </div>
+
 
           {/* API offline or connection notices */}
           {errorMessage && (
@@ -1914,6 +1949,33 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
                 animate={{ opacity: 1, y: 0 }}
                 className="space-y-6"
               >
+              {/* Global Quick Metrics Card */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-[#121215] p-5 rounded-2xl border border-white/5 shadow-lg print:hidden">
+                <div className="flex flex-col gap-1 border-b md:border-b-0 md:border-r border-white/5 pb-4 md:pb-0 md:pr-4">
+                  <span className="text-[10px] text-gray-500 font-mono uppercase tracking-widest flex items-center gap-1.5">
+                    <DollarSign className="w-3.5 h-3.5 text-emerald-500" />
+                    Faturamento do Mês
+                  </span>
+                  <span className="text-2xl font-extrabold text-white">R$ {monthlyRevenue.toFixed(2)}</span>
+                </div>
+                
+                <div className="flex flex-col gap-1 border-b md:border-b-0 md:border-r border-white/5 pb-4 md:pb-0 md:px-4">
+                  <span className="text-[10px] text-gray-500 font-mono uppercase tracking-widest flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-amber-500" />
+                    Agendamentos Pendentes
+                  </span>
+                  <span className="text-2xl font-extrabold text-white">{pendingBookingsTotal}</span>
+                </div>
+                
+                <div className="flex flex-col gap-1 pt-4 md:pt-0 md:pl-4">
+                  <span className="text-[10px] text-gray-500 font-mono uppercase tracking-widest flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-blue-500" />
+                    Total de Clientes
+                  </span>
+                  <span className="text-2xl font-extrabold text-white">{totalUniqueClients}</span>
+                </div>
+              </div>
+
               {/* Dynamic quick metrics cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
                 {/* Trial Status */}
@@ -1984,9 +2046,41 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
                 
                 {/* Chart 1: Revenue (Faturamento Estimado) */}
                 <div className="p-6 rounded-3xl bg-[#121215] border border-white/5 space-y-4">
-                  <div>
-                    <h3 className="text-base font-bold text-white">Faturamento & Receita Estimada</h3>
-                    <p className="text-[11px] text-gray-400 mt-1 font-light">Evolução do faturamento total nos últimos 7 dias baseado nos serviços agendados.</p>
+                  <div className="flex flex-col gap-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <h3 className="text-base font-bold text-white">Faturamento & Receita Estimada</h3>
+                        <p className="text-[11px] text-gray-400 mt-1 font-light">Evolução do faturamento baseado nos serviços agendados.</p>
+                      </div>
+                      <button
+                        onClick={() => setIsChartExpanded(true)}
+                        className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer"
+                        title="Expandir gráfico"
+                      >
+                        <Maximize2 className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2 bg-[#1a1a1f] p-1 rounded-xl self-start">
+                      <button
+                        onClick={() => setChartPeriod('semanal')}
+                        className={`px-3 py-1.5 text-[11px] font-bold rounded-lg transition-colors ${chartPeriod === 'semanal' ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                      >
+                        Semanal
+                      </button>
+                      <button
+                        onClick={() => setChartPeriod('mensal')}
+                        className={`px-3 py-1.5 text-[11px] font-bold rounded-lg transition-colors ${chartPeriod === 'mensal' ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                      >
+                        Mensal
+                      </button>
+                      <button
+                        onClick={() => setChartPeriod('anual')}
+                        className={`px-3 py-1.5 text-[11px] font-bold rounded-lg transition-colors ${chartPeriod === 'anual' ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                      >
+                        Anual
+                      </button>
+                    </div>
                   </div>
                   
                   <div className="h-72 w-full pt-4">
@@ -3873,6 +3967,124 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
               </form>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Expanded Chart Modal */}
+      <AnimatePresence>
+        {isChartExpanded && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 lg:p-12">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsChartExpanded(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-md"
+            />
+            
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative w-full max-w-7xl h-[80vh] bg-[#121215] border border-white/10 rounded-3xl p-6 sm:p-8 flex flex-col shadow-2xl overflow-hidden"
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-white">Faturamento & Receita Estimada (Detalhado)</h2>
+                  <p className="text-gray-400 mt-2 font-light">Evolução do faturamento baseado nos serviços agendados.</p>
+                </div>
+                
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2 bg-[#1a1a1f] p-1 rounded-xl">
+                    <button
+                      onClick={() => setChartPeriod('semanal')}
+                      className={`px-3 py-1.5 text-sm font-bold rounded-lg transition-colors ${chartPeriod === 'semanal' ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                    >
+                      Semanal
+                    </button>
+                    <button
+                      onClick={() => setChartPeriod('mensal')}
+                      className={`px-3 py-1.5 text-sm font-bold rounded-lg transition-colors ${chartPeriod === 'mensal' ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                    >
+                      Mensal
+                    </button>
+                    <button
+                      onClick={() => setChartPeriod('anual')}
+                      className={`px-3 py-1.5 text-sm font-bold rounded-lg transition-colors ${chartPeriod === 'anual' ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                    >
+                      Anual
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={() => setIsChartExpanded(false)}
+                    className="p-3 rounded-xl bg-white/5 hover:bg-white/10 text-white transition-colors cursor-pointer"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex-1 w-full min-h-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={chartData}
+                    margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff15" vertical={false} />
+                    <XAxis 
+                      dataKey="name" 
+                      stroke="#9ca3af" 
+                      fontSize={14}
+                      tickLine={false}
+                      axisLine={false}
+                      dy={15}
+                    />
+                    <YAxis 
+                      stroke="#9ca3af" 
+                      fontSize={14}
+                      tickLine={false}
+                      axisLine={false}
+                      dx={-15}
+                      tickFormatter={(val) => `R$${val}`}
+                    />
+                    <Tooltip content={<CustomTooltip prefix="R$ " />} cursor={{ stroke: '#ffffff20', strokeWidth: 2 }} />
+                    <Line 
+                      type="monotone" 
+                      dataKey="receita" 
+                      stroke="#f59e0b" 
+                      strokeWidth={4}
+                      dot={{ r: 6, fill: '#f59e0b', strokeWidth: 0 }}
+                      activeDot={{ r: 8, fill: '#f59e0b', strokeWidth: 0 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.9 }}
+            className={`fixed bottom-6 right-6 z-[100] flex items-center gap-3 px-5 py-4 rounded-xl shadow-2xl border ${
+              toast.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' :
+              toast.type === 'error' ? 'bg-rose-500/10 border-rose-500/30 text-rose-400' :
+              'bg-blue-500/10 border-blue-500/30 text-blue-400'
+            } backdrop-blur-md`}
+          >
+            {toast.type === 'success' && <Check className="w-5 h-5" />}
+            {(toast.type === 'error' || toast.type === 'info') && <AlertCircle className="w-5 h-5" />}
+            <span className="text-sm font-bold tracking-wide">{toast.message}</span>
+            <button onClick={() => setToast(null)} className="ml-2 hover:bg-white/10 p-1 rounded-lg transition-colors cursor-pointer">
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
         )}
       </AnimatePresence>
 
