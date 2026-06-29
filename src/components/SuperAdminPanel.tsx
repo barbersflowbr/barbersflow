@@ -45,7 +45,8 @@ import {
   Zap,
   Megaphone,
   Percent,
-  Download
+  Download,
+  Calculator
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { BarbeariaTableSkeleton } from './LoadingSkeleton';
@@ -95,6 +96,14 @@ export default function SuperAdminPanel({ onBack }: { onBack: () => void }) {
   const [simStandardPrice, setSimStandardPrice] = useState<number>(34.90);
   const [simProPrice, setSimProPrice] = useState<number>(54.90);
   const [simBlackPrice, setSimBlackPrice] = useState<number>(74.90);
+
+  // SaaS Revenue & Subscriber Calculator States
+  const [calcMode, setCalcMode] = useState<'target' | 'volume'>('target');
+  const [calcTargetMRR, setCalcTargetMRR] = useState<number>(15000);
+  const [calcPreset, setCalcPreset] = useState<'balanced' | 'volume_heavy' | 'pro_heavy' | 'premium_heavy'>('balanced');
+  const [calcStandardSubs, setCalcStandardSubs] = useState<number>(100);
+  const [calcProSubs, setCalcProSubs] = useState<number>(60);
+  const [calcBlackSubs, setCalcBlackSubs] = useState<number>(30);
 
   // Editable Input States for Goal Settings
   const [goalConvInput, setGoalConvInput] = useState<string>(targetConversionRate.toString());
@@ -1491,6 +1500,428 @@ export default function SuperAdminPanel({ onBack }: { onBack: () => void }) {
                 </div>
               </div>
 
+            </div>
+
+            {/* SaaS Subscriber & Revenue Calculator */}
+            <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden animate-in fade-in duration-300">
+              {/* Header */}
+              <div className="p-6 border-b border-gray-100 bg-gray-50/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="space-y-1">
+                  <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                    <Calculator className="w-5 h-5 text-amber-500" />
+                    Calculadora de Planejamento SaaS (Volume & Receita)
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    Projete metas de faturamento mensal e determine o volume necessário de clientes ativos por plano ou vice-versa.
+                  </p>
+                </div>
+
+                {/* Mode Selector Tab */}
+                <div className="flex bg-gray-100 p-1 rounded-xl self-start sm:self-center">
+                  <button
+                    onClick={() => setCalcMode('target')}
+                    className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                      calcMode === 'target' 
+                        ? 'bg-white text-gray-900 shadow-xs' 
+                        : 'text-gray-500 hover:text-gray-800'
+                    }`}
+                  >
+                    Meta de Faturamento (Reversa)
+                  </button>
+                  <button
+                    onClick={() => setCalcMode('volume')}
+                    className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                      calcMode === 'volume' 
+                        ? 'bg-white text-gray-900 shadow-xs' 
+                        : 'text-gray-500 hover:text-gray-800'
+                    }`}
+                  >
+                    Simulador de Volume (Direta)
+                  </button>
+                </div>
+              </div>
+
+              {/* Body */}
+              <div className="p-6">
+                {calcMode === 'target' ? (
+                  <div className="space-y-6">
+                    {/* Reverse Mode: Target Revenue -> Subs needed */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      {/* Column 1: Input Meta */}
+                      <div className="space-y-4 md:col-span-1">
+                        <div>
+                          <label className="block text-xs font-bold text-gray-700 font-mono uppercase tracking-wider mb-2">
+                            Meta de Faturamento Mensal (MRR)
+                          </label>
+                          <div className="relative">
+                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm">R$</span>
+                            <input
+                              type="number"
+                              min="100"
+                              max="1000000"
+                              value={calcTargetMRR}
+                              onChange={(e) => setCalcTargetMRR(Math.max(0, parseInt(e.target.value) || 0))}
+                              className="w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none font-bold text-gray-900 text-lg"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Quick Presets for Target */}
+                        <div className="grid grid-cols-2 gap-2">
+                          {[5000, 15000, 30000, 50000].map((val) => (
+                            <button
+                              key={val}
+                              onClick={() => setCalcTargetMRR(val)}
+                              className={`py-1.5 px-3 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
+                                calcTargetMRR === val
+                                  ? 'bg-amber-500 border-amber-500 text-black shadow-xs'
+                                  : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                              }`}
+                            >
+                              R$ {val.toLocaleString('pt-BR')}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Column 2: Preset Weight distribution */}
+                      <div className="space-y-3 md:col-span-2">
+                        <label className="block text-xs font-bold text-gray-700 font-mono uppercase tracking-wider">
+                          Estratégia de Distribuição dos Planos
+                        </label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {[
+                            { id: 'balanced', name: 'Equilibrada', desc: 'Foco dividido igualmente', weights: '34% Std | 33% Pro | 33% Black' },
+                            { id: 'volume_heavy', name: 'Volume / Econômica', desc: 'Foco no plano de entrada', weights: '60% Std | 30% Pro | 10% Black' },
+                            { id: 'pro_heavy', name: 'Intermediária / Recomendada', desc: 'Maior adesão no Pro Flow', weights: '20% Std | 60% Pro | 20% Black' },
+                            { id: 'premium_heavy', name: 'Alta Conversão / Premium', desc: 'Foco no ticket alto (Black Elite)', weights: '10% Std | 20% Pro | 70% Black' }
+                          ].map((p) => (
+                            <button
+                              key={p.id}
+                              onClick={() => setCalcPreset(p.id as any)}
+                              className={`p-4 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                                calcPreset === p.id
+                                  ? 'bg-amber-50/50 border-amber-300 ring-1 ring-amber-300'
+                                  : 'bg-white border-gray-200 hover:border-gray-300'
+                              }`}
+                            >
+                              <div>
+                                <h4 className="text-xs font-bold text-gray-900">{p.name}</h4>
+                                <p className="text-[10px] text-gray-500 mt-0.5 leading-tight">{p.desc}</p>
+                              </div>
+                              <span className="text-[9px] font-mono font-semibold text-amber-700 mt-2 block bg-amber-100/50 px-1.5 py-0.5 rounded self-start">
+                                {p.weights}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Results of reverse calculation */}
+                    {(() => {
+                      const weights = {
+                        balanced: { std: 34, pro: 33, blk: 33 },
+                        volume_heavy: { std: 60, pro: 30, blk: 10 },
+                        pro_heavy: { std: 20, pro: 60, blk: 20 },
+                        premium_heavy: { std: 10, pro: 20, blk: 70 },
+                      }[calcPreset];
+
+                      const arpu = ((weights.std * simStandardPrice) + (weights.pro * simProPrice) + (weights.blk * simBlackPrice)) / 100;
+                      const totalSubs = arpu > 0 ? Math.ceil(calcTargetMRR / arpu) : 0;
+                      
+                      const stdSubs = Math.round((totalSubs * weights.std) / 100);
+                      const proSubs = Math.round((totalSubs * weights.pro) / 100);
+                      const blkSubs = Math.max(0, totalSubs - stdSubs - proSubs);
+
+                      const exactMRR = (stdSubs * simStandardPrice) + (proSubs * simProPrice) + (blkSubs * simBlackPrice);
+                      const exactARR = exactMRR * 12;
+
+                      return (
+                        <div className="space-y-6 pt-4 border-t border-gray-100">
+                          {/* Bento results per plan */}
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            {/* Standard needed */}
+                            <div className="p-5 rounded-2xl bg-gray-50 border border-gray-200 flex flex-col justify-between space-y-4">
+                              <div className="flex justify-between items-center">
+                                <span className="text-xs font-bold text-gray-500 font-mono uppercase bg-gray-200/50 px-2.5 py-0.5 rounded">
+                                  💈 Standard
+                                </span>
+                                <span className="text-xs font-bold text-gray-900 font-mono">
+                                  R$ {simStandardPrice.toFixed(2)}/mês
+                                </span>
+                              </div>
+                              <div>
+                                <p className="text-2xl font-black text-gray-900">
+                                  {stdSubs} <span className="text-sm font-semibold text-gray-500">assinantes</span>
+                                </p>
+                                <p className="text-[11px] text-gray-400 mt-1">
+                                  ({weights.std}% da base sugerida)
+                                </p>
+                              </div>
+                              <div className="pt-3 border-t border-gray-200/50 flex justify-between text-xs text-gray-600 font-medium">
+                                <span>Contribuição Mensal:</span>
+                                <span className="font-bold text-gray-900">
+                                  R$ {(stdSubs * simStandardPrice).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Pro needed */}
+                            <div className="p-5 rounded-2xl bg-amber-50/40 border border-amber-100 flex flex-col justify-between space-y-4">
+                              <div className="flex justify-between items-center">
+                                <span className="text-xs font-bold text-amber-700 font-mono uppercase bg-amber-100/50 px-2.5 py-0.5 rounded">
+                                  ✨ Pro Flow
+                                </span>
+                                <span className="text-xs font-bold text-amber-900 font-mono">
+                                  R$ {simProPrice.toFixed(2)}/mês
+                                </span>
+                              </div>
+                              <div>
+                                <p className="text-2xl font-black text-gray-900">
+                                  {proSubs} <span className="text-sm font-semibold text-gray-500">assinantes</span>
+                                </p>
+                                <p className="text-[11px] text-gray-400 mt-1">
+                                  ({weights.pro}% da base sugerida)
+                                </p>
+                              </div>
+                              <div className="pt-3 border-t border-amber-200/50 flex justify-between text-xs text-gray-600 font-medium">
+                                <span>Contribuição Mensal:</span>
+                                <span className="font-bold text-gray-900 font-mono">
+                                  R$ {(proSubs * simProPrice).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Black needed */}
+                            <div className="p-5 rounded-2xl bg-zinc-900 text-white flex flex-col justify-between space-y-4">
+                              <div className="flex justify-between items-center">
+                                <span className="text-xs font-bold text-amber-400 font-mono uppercase bg-white/10 px-2.5 py-0.5 rounded">
+                                  👑 Black Elite
+                                </span>
+                                <span className="text-xs font-bold text-amber-300 font-mono">
+                                  R$ {simBlackPrice.toFixed(2)}/mês
+                                </span>
+                              </div>
+                              <div>
+                                <p className="text-2xl font-black text-white">
+                                  {blkSubs} <span className="text-sm font-semibold text-gray-400">assinantes</span>
+                                </p>
+                                <p className="text-[11px] text-gray-400 mt-1">
+                                  ({weights.blk}% da base sugerida)
+                                </p>
+                              </div>
+                              <div className="pt-3 border-t border-zinc-800 flex justify-between text-xs text-gray-400 font-medium">
+                                <span>Contribuição Mensal:</span>
+                                <span className="font-bold text-amber-400 font-mono">
+                                  R$ {(blkSubs * simBlackPrice).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Summary Consolidated Banner */}
+                          <div className="p-5 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 text-black flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                            <div className="space-y-0.5">
+                              <h4 className="text-sm font-bold uppercase tracking-wider font-mono">Resultado da Simulação de Meta</h4>
+                              <p className="text-xs font-medium opacity-90">
+                                Para gerar um faturamento de <strong className="font-bold font-mono">R$ {calcTargetMRR.toLocaleString('pt-BR')}</strong>, você precisa adquirir um total consolidado de <strong className="font-black text-sm">{totalSubs} lojistas</strong> sob as mensalidades configuradas.
+                              </p>
+                            </div>
+                            <div className="flex gap-4 self-stretch md:self-auto justify-between border-t border-black/10 md:border-t-0 pt-3 md:pt-0">
+                              <div className="text-left md:text-right">
+                                <span className="text-[10px] font-bold uppercase tracking-widest block opacity-75 font-mono">Faturamento Real Estimado</span>
+                                <span className="text-lg font-black font-mono">R$ {exactMRR.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}<span className="text-xs font-bold">/mês</span></span>
+                              </div>
+                              <div className="text-left md:text-right border-l border-black/10 pl-4">
+                                <span className="text-[10px] font-bold uppercase tracking-widest block opacity-75 font-mono">Ticket Médio (ARPU)</span>
+                                <span className="text-lg font-black font-mono">R$ {arpu.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                              </div>
+                              <div className="text-left md:text-right border-l border-black/10 pl-4 hidden sm:block">
+                                <span className="text-[10px] font-bold uppercase tracking-widest block opacity-75 font-mono">Faturamento Anualizado (ARR)</span>
+                                <span className="text-lg font-black font-mono">R$ {exactARR.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {/* Forward Mode: User chooses volume -> revenue is calculated */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                      {/* Left: Volume Sliders */}
+                      <div className="space-y-5">
+                        <h4 className="text-xs font-bold text-gray-700 font-mono uppercase tracking-widest mb-2">Configure o Volume de Assinantes Desejado</h4>
+                        
+                        {/* Standard Slider */}
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between items-center text-xs font-medium">
+                            <span className="text-gray-600 flex items-center gap-1.5">
+                              <span className="w-2.5 h-2.5 rounded bg-slate-400" />
+                              Lojas no Plano Standard (R$ {simStandardPrice.toFixed(2)})
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <input 
+                                type="number"
+                                min="0"
+                                max="10000"
+                                value={calcStandardSubs}
+                                onChange={(e) => setCalcStandardSubs(Math.max(0, parseInt(e.target.value) || 0))}
+                                className="w-16 px-2 py-1 text-right text-xs font-bold border border-gray-200 rounded"
+                              />
+                              <span className="text-gray-400 text-[10px]">Lojas</span>
+                            </div>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="500"
+                            step="5"
+                            value={calcStandardSubs}
+                            onChange={(e) => setCalcStandardSubs(parseInt(e.target.value))}
+                            className="w-full accent-amber-500 h-1.5 bg-gray-100 rounded-lg cursor-pointer"
+                          />
+                        </div>
+
+                        {/* Pro Slider */}
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between items-center text-xs font-medium">
+                            <span className="text-gray-600 flex items-center gap-1.5">
+                              <span className="w-2.5 h-2.5 rounded bg-amber-500" />
+                              Lojas no Plano Pro Flow (R$ {simProPrice.toFixed(2)})
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <input 
+                                type="number"
+                                min="0"
+                                max="10000"
+                                value={calcProSubs}
+                                onChange={(e) => setCalcProSubs(Math.max(0, parseInt(e.target.value) || 0))}
+                                className="w-16 px-2 py-1 text-right text-xs font-bold border border-gray-200 rounded"
+                              />
+                              <span className="text-gray-400 text-[10px]">Lojas</span>
+                            </div>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="500"
+                            step="5"
+                            value={calcProSubs}
+                            onChange={(e) => setCalcProSubs(parseInt(e.target.value))}
+                            className="w-full accent-amber-500 h-1.5 bg-gray-100 rounded-lg cursor-pointer"
+                          />
+                        </div>
+
+                        {/* Black Slider */}
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between items-center text-xs font-medium">
+                            <span className="text-gray-600 flex items-center gap-1.5">
+                              <span className="w-2.5 h-2.5 rounded bg-zinc-900" />
+                              Lojas no Plano Black Elite (R$ {simBlackPrice.toFixed(2)})
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <input 
+                                type="number"
+                                min="0"
+                                max="10000"
+                                value={calcBlackSubs}
+                                onChange={(e) => setCalcBlackSubs(Math.max(0, parseInt(e.target.value) || 0))}
+                                className="w-16 px-2 py-1 text-right text-xs font-bold border border-gray-200 rounded"
+                              />
+                              <span className="text-gray-400 text-[10px]">Lojas</span>
+                            </div>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="500"
+                            step="5"
+                            value={calcBlackSubs}
+                            onChange={(e) => setCalcBlackSubs(parseInt(e.target.value))}
+                            className="w-full accent-amber-500 h-1.5 bg-gray-100 rounded-lg cursor-pointer"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Right: Outcome indicators */}
+                      <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6 flex flex-col justify-between space-y-6">
+                        {(() => {
+                          const totalSubs = calcStandardSubs + calcProSubs + calcBlackSubs;
+                          const calculatedRevenue = (calcStandardSubs * simStandardPrice) + (calcProSubs * simProPrice) + (calcBlackSubs * simBlackPrice);
+                          const totalARR = calculatedRevenue * 12;
+                          const arpuValue = totalSubs > 0 ? calculatedRevenue / totalSubs : 0;
+                          
+                          // Compare with goal MRR
+                          const goalPct = targetMRR > 0 ? Math.min(100, Math.round((calculatedRevenue / targetMRR) * 100)) : 0;
+
+                          return (
+                            <>
+                              <div className="space-y-4">
+                                <h4 className="text-xs font-bold text-gray-500 font-mono uppercase tracking-widest">Receita Recorrente Estimada por Mês</h4>
+                                
+                                <div className="grid grid-cols-2 gap-4">
+                                  {/* MRR Card */}
+                                  <div className="bg-white p-4 rounded-xl border border-gray-200">
+                                    <span className="text-[10px] font-bold text-gray-400 block font-mono uppercase">MRR SaaS Estimado</span>
+                                    <span className="text-2xl font-black text-gray-900 font-mono">
+                                      R$ {calculatedRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </span>
+                                  </div>
+                                  
+                                  {/* ARR Card */}
+                                  <div className="bg-white p-4 rounded-xl border border-gray-200">
+                                    <span className="text-[10px] font-bold text-gray-400 block font-mono uppercase">ARR Projeção Anual</span>
+                                    <span className="text-2xl font-black text-emerald-600 font-mono">
+                                      R$ {totalARR.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                  {/* Total Subscribers */}
+                                  <div className="bg-white p-4 rounded-xl border border-gray-200">
+                                    <span className="text-[10px] font-bold text-gray-400 block font-mono uppercase">Total Assinantes</span>
+                                    <span className="text-xl font-bold text-gray-800">
+                                      {totalSubs} lojistas
+                                    </span>
+                                  </div>
+
+                                  {/* ARPU */}
+                                  <div className="bg-white p-4 rounded-xl border border-gray-200">
+                                    <span className="text-[10px] font-bold text-gray-400 block font-mono uppercase">Ticket Médio (ARPU)</span>
+                                    <span className="text-xl font-bold text-gray-800 font-mono">
+                                      R$ {arpuValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Progress bar compared to target MRR */}
+                              <div className="space-y-2 pt-4 border-t border-gray-200/60">
+                                <div className="flex justify-between items-center text-xs">
+                                  <span className="text-gray-500 font-medium">Progresso contra a meta SaaS de R$ {targetMRR.toLocaleString('pt-BR')}:</span>
+                                  <span className={`font-black ${goalPct >= 100 ? 'text-emerald-600' : 'text-amber-500'}`}>{goalPct}%</span>
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden border border-gray-300/30">
+                                  <div 
+                                    className={`h-full rounded-full transition-all duration-300 ${
+                                      goalPct >= 100 ? 'bg-emerald-500' : 'bg-amber-500'
+                                    }`}
+                                    style={{ width: `${goalPct}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Bottom Row: Distribution & Leaderboard */}
