@@ -10,9 +10,7 @@ import {
   BarbeariaPlanInfo,
   logoutBarbearia,
   createSuperAdminLog,
-  getSuperAdminLogs,
-  createSandboxBarbearias,
-  purgeSandboxBarbearias
+  getSuperAdminLogs
 } from '../lib/db';
 import { SuperAdminLog } from '../types';
 import { 
@@ -362,13 +360,7 @@ export default function SuperAdminPanel({ onBack }: { onBack: () => void }) {
     setIsGeneratingSandbox(true);
     let createdCount = 0;
     try {
-      const dummyShops: Array<{
-        name: string;
-        slug: string;
-        planName: string;
-        status: 'active' | 'trial';
-        email: string;
-      }> = [
+      const dummyShops = [
         { name: '💈 Confraria do Bigode', slug: 'confraria-bigode', planName: 'Pro Flow', status: 'active', email: 'confraria@example.com' },
         { name: '✂️ Corte de Elite Premium', slug: 'corte-elite', planName: 'Black Elite', status: 'active', email: 'elite@example.com' },
         { name: '🌱 Vintage Club Barbearia', slug: 'vintage-club', planName: 'Standard', status: 'trial', email: 'vintage@example.com' },
@@ -378,14 +370,40 @@ export default function SuperAdminPanel({ onBack }: { onBack: () => void }) {
 
       for (const shop of dummyShops) {
         const uniqueSlug = `${shop.slug}-${Math.floor(Math.random() * 9000 + 1000)}`;
-        shop.slug = uniqueSlug;
-      }
+        const planInfo = {
+          name: shop.planName,
+          status: shop.status,
+          planEndsAt: shop.status === 'active' ? new Date(new Date().getTime() + 30 * 24 * 60 * 60 * 1000).toISOString() : undefined,
+          trialEndsAt: shop.status === 'trial' ? new Date(new Date().getTime() + 14 * 24 * 60 * 60 * 1000).toISOString() : undefined,
+        };
 
-      const createdCount = await createSandboxBarbearias(dummyShops);
+        const newBarbearia = {
+          id: crypto.randomUUID(),
+          name: shop.name,
+          email: shop.email,
+          slug: uniqueSlug,
+          plan: JSON.stringify(planInfo),
+          isOnboarded: true,
+          barbers: [
+            { id: 'b1', name: 'Carlos Master', phone: '11999999999', bio: 'Navalha e barba de respeito.', avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=100&h=100&fit=crop', available: true },
+            { id: 'b2', name: 'Felipe Barber', phone: '11988888888', bio: 'Cortes degradê e modernos.', avatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=100&h=100&fit=crop', available: true }
+          ],
+          services: [
+            { id: 's1', name: 'Corte Tradicional', price: 40, duration: 30, category: 'Cabelo', description: 'Corte tradicional com tesoura e máquina.' },
+            { id: 's2', name: 'Barba de Toalha Quente', price: 30, duration: 20, category: 'Barba', description: 'Barba clássica com espuma e toalha.' }
+          ],
+          createdAt: new Date().toISOString()
+        };
+
+        const { error } = await supabase.from('barbearias').insert(newBarbearia);
+        if (!error) {
+          createdCount++;
+        }
+      }
 
       await createSuperAdminLog({
         action: 'Massa / Sandbox',
-        details: `Iniciou ${createdCount} barbearias de simulação no sistema.`,
+        details: `Iniciou 5 barbearias de simulação no sistema.`,
         performedBy: 'superadmin'
       });
 
@@ -401,14 +419,21 @@ export default function SuperAdminPanel({ onBack }: { onBack: () => void }) {
   };
 
   const handlePurgeSandbox = async () => {
-    if (!window.confirm('Atenção: Isso irá deletar permanentemente todas as lojas de simulação (emails contendo @example.com). Confirmar?')) return;
+    if (!window.confirm('Atenção: Isso irá deletar permanentemente todas as 5 lojas de simulação (emails contendo @example.com). Confirmar?')) return;
     setIsGeneratingSandbox(true);
     try {
-      const deletedCount = await purgeSandboxBarbearias();
+      const { data, error } = await supabase.from('barbearias').select('id, name').like('email', '%@example.com');
+      if (error) throw error;
 
-      if (deletedCount === 0) {
+      if (!data || data.length === 0) {
         showToast('Nenhuma loja de simulação sandbox encontrada no banco.', 'error');
         return;
+      }
+
+      let deletedCount = 0;
+      for (const shop of data) {
+        const { error: delErr } = await supabase.from('barbearias').delete().eq('id', shop.id);
+        if (!delErr) deletedCount++;
       }
 
       await createSuperAdminLog({

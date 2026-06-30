@@ -83,9 +83,7 @@ import {
 import { 
   addBooking, 
   updateBookingStatus, 
-  deleteBookingFromDb,
-  sendWelcomeEmail,
-  createCheckoutSession
+  deleteBookingFromDb 
 } from '../lib/api';
 import { BookingsCalendarSkeleton } from './LoadingSkeleton';
 
@@ -355,6 +353,13 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
       setConfigPhone(activeBarbearia.phone || '');
       setConfigLogo(activeBarbearia.logo || 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=150&h=150');
       setConfigSlug(activeBarbearia.slug || '');
+      
+      // Sync loyalty config
+      if (activeBarbearia.loyaltyConfig) {
+        setLoyaltyEnabled(activeBarbearia.loyaltyConfig.enabled);
+        setLoyaltyPointsToReward(activeBarbearia.loyaltyConfig.pointsToReward);
+        setLoyaltyRewardDescription(activeBarbearia.loyaltyConfig.rewardDescription);
+      }
     }
   }, [activeBarbearia]);
 
@@ -375,6 +380,11 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
   const [isChartExpanded, setIsChartExpanded] = useState(false);
   const [chartPeriod, setChartPeriod] = useState<'semanal' | 'mensal' | 'anual'>('semanal');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  // Loyalty Program States
+  const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);
+  const [loyaltyPointsToReward, setLoyaltyPointsToReward] = useState(10);
+  const [loyaltyRewardDescription, setLoyaltyRewardDescription] = useState('Corte Grátis');
 
   // Real-time broadcast and promotional voucher application state
   const [forceUpdateTrigger, setForceUpdateTrigger] = useState(0);
@@ -492,15 +502,23 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
     if (planName === 'Black Elite') price = 74.90;
 
     try {
-      const data = await createCheckoutSession(
-        planName,
-        price,
-        `Assinatura ${planName} - BarbersFlow`,
-        activeBarbearia.email,
-      );
+      const response = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          planName: planName,
+          price: price,
+          email: activeBarbearia.email,
+          title: `Assinatura ${planName} - BarbersFlow`
+        })
+      });
 
-      if (!data?.success) {
-        throw new Error(data?.error || 'Erro ao gerar link de pagamento');
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.error || 'Erro ao gerar link de pagamento');
       }
 
       // Redireciona para o Mercado Pago
@@ -614,7 +632,18 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
       
       // Send welcome email
       try {
-        await sendWelcomeEmail(authEmail, authName, authSlug, authPlan);
+        await fetch('/api/email/welcome', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            email: authEmail,
+            name: authName,
+            slug: authSlug,
+            plan: authPlan
+          }),
+        });
       } catch (emailErr) {
         console.error('Failed to send welcome email:', emailErr);
       }
@@ -674,7 +703,12 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
         location: configLocation.trim(),
         phone: configPhone.trim(),
         logo: configLogo.trim(),
-        slug: sanitizedSlug
+        slug: sanitizedSlug,
+        loyaltyConfig: {
+          enabled: loyaltyEnabled,
+          pointsToReward: loyaltyPointsToReward,
+          rewardDescription: loyaltyRewardDescription
+        }
       });
 
       onSetActiveBarbearia({
@@ -683,7 +717,12 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
         location: configLocation.trim(),
         phone: configPhone.trim(),
         logo: configLogo.trim(),
-        slug: sanitizedSlug
+        slug: sanitizedSlug,
+        loyaltyConfig: {
+          enabled: loyaltyEnabled,
+          pointsToReward: loyaltyPointsToReward,
+          rewardDescription: loyaltyRewardDescription
+        }
       });
     } catch (err: any) {
       console.error(err);
@@ -995,6 +1034,33 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
   const handleUpdateStatus = async (bookingId: string, newStatus: 'Ocupado' | 'Concluído' | 'Livre') => {
     try {
       await updateBookingStatus(bookingId, newStatus as any);
+      
+      // Loyalty logic: Add point when marked as Concluído
+      if (newStatus === 'Concluído' && activeBarbearia?.loyaltyConfig?.enabled) {
+        const booking = bookings.find(b => b.id === bookingId);
+        if (booking) {
+          const clientPhoneClean = booking.clientPhone?.replace(/\D/g, '');
+          const clientEmailClean = booking.clientEmail?.toLowerCase().trim();
+          
+          const clientIndex = activeBarbearia.clients?.findIndex(c => 
+            (clientPhoneClean && c.phone.replace(/\D/g, '') === clientPhoneClean) || 
+            (clientEmailClean && c.email?.toLowerCase().trim() === clientEmailClean)
+          );
+          
+          if (clientIndex !== undefined && clientIndex !== -1) {
+             const updatedClients = [...activeBarbearia.clients!];
+             updatedClients[clientIndex] = { 
+               ...updatedClients[clientIndex], 
+               loyaltyPoints: (updatedClients[clientIndex].loyaltyPoints || 0) + 1 
+             };
+             
+             await updateBarbearia(activeBarbearia.id, { clients: updatedClients });
+             onSetActiveBarbearia({ ...activeBarbearia, clients: updatedClients });
+             showToast('Ponto de fidelidade adicionado ao cliente!', 'info');
+          }
+        }
+      }
+
       showToast(`Status atualizado para ${newStatus}`, 'success');
     } catch (err: any) {
       console.error(err);
@@ -2880,8 +2946,11 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
                           email: c.email || '',
                           visits: 0,
                           lastVisit: c.createdAt.substring(0, 10),
-                          isManual: true
+                          isManual: true,
+                          loyaltyPoints: c.loyaltyPoints || 0
                         });
+                      } else {
+                        clientMap.get(identifier).loyaltyPoints = c.loyaltyPoints || 0;
                       }
                     });
                   }
@@ -2907,10 +2976,18 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
                               <span className="text-lg font-bold text-amber-500">{client.name.charAt(0).toUpperCase()}</span>
                             </div>
                             <div className="flex-1 min-w-0">
-                              <h4 className="text-base font-bold text-white truncate flex items-center gap-2">
-                                {client.name}
-                                {client.isManual && <span className="px-1.5 py-0.5 bg-white/10 rounded text-[9px] font-mono uppercase text-gray-400">Manual</span>}
-                              </h4>
+                              <div className="flex items-center justify-between gap-2">
+                                <h4 className="text-base font-bold text-white truncate flex items-center gap-2">
+                                  {client.name}
+                                  {client.isManual && <span className="px-1.5 py-0.5 bg-white/10 rounded text-[9px] font-mono uppercase text-gray-400">Manual</span>}
+                                </h4>
+                                {activeBarbearia?.loyaltyConfig?.enabled && client.loyaltyPoints > 0 && (
+                                  <div className="flex items-center gap-1 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                                    <Star className="w-3 h-3 text-amber-500" fill="currentColor" />
+                                    <span className="text-[10px] font-bold text-amber-500">{client.loyaltyPoints}</span>
+                                  </div>
+                                )}
+                              </div>
                               <p className="text-sm text-gray-400 font-mono mt-1 flex items-center gap-1.5">
                                 <Smartphone className="w-3.5 h-3.5" />
                                 {client.phone || 'Não informado'}
@@ -3176,6 +3253,69 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
                         </div>
                       ))
                     )}
+                  </div>
+                </div>
+
+                {/* Loyalty Program Config Card */}
+                <div className="bg-[#121215] p-6 rounded-3xl border border-white/5 space-y-6">
+                  <div>
+                    <h3 className="text-base font-bold text-white flex items-center gap-2">
+                      <Star className="w-5 h-5 text-amber-500" />
+                      Programa de Fidelidade
+                    </h3>
+                    <p className="text-xs text-gray-400 mt-1">Estimule a fidelidade dos seus clientes com pontos e prêmios.</p>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between p-4 bg-[#131316] border border-white/5 rounded-2xl">
+                      <div>
+                        <span className="text-sm font-bold text-white block">Ativar Programa</span>
+                        <span className="text-[10px] text-gray-500">Habilita o cartão fidelidade no app do cliente.</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setLoyaltyEnabled(!loyaltyEnabled)}
+                        className={`w-12 h-6 rounded-full transition-all relative ${loyaltyEnabled ? 'bg-amber-500' : 'bg-gray-800'}`}
+                      >
+                        <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${loyaltyEnabled ? 'left-7' : 'left-1'}`} />
+                      </button>
+                    </div>
+
+                    <AnimatePresence>
+                      {loyaltyEnabled && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          className="space-y-4 overflow-hidden"
+                        >
+                          <div>
+                            <label className="block text-[10px] font-mono text-gray-400 mb-1.5 uppercase tracking-wider font-semibold">Pontos para o Prêmio</label>
+                            <input
+                              type="number"
+                              min="1"
+                              max="20"
+                              value={loyaltyPointsToReward}
+                              onChange={(e) => setLoyaltyPointsToReward(Number(e.target.value))}
+                              className="w-full p-3 bg-[#131316] border border-white/5 rounded-xl text-sm text-gray-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                            />
+                            <span className="text-[10px] text-gray-500 mt-1 block">Número de serviços necessários para ganhar o prêmio.</span>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-mono text-gray-400 mb-1.5 uppercase tracking-wider font-semibold">Descrição do Prêmio</label>
+                            <input
+                              type="text"
+                              value={loyaltyRewardDescription}
+                              onChange={(e) => setLoyaltyRewardDescription(e.target.value)}
+                              placeholder="Ex: Corte Grátis"
+                              className="w-full p-3 bg-[#131316] border border-white/5 rounded-xl text-sm text-gray-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                            />
+                            <span className="text-[10px] text-gray-500 mt-1 block">O que o cliente ganha ao completar o cartão.</span>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
                 </div>
               </div>

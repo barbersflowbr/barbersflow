@@ -230,7 +230,12 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
         </AnimatePresence>
       </header>
 
-      <div className={`transition-all duration-300 ${mobileMenuOpen ? 'blur-sm' : ''}`}>
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.8, ease: "easeOut" }}
+        className={`transition-all duration-300 ${mobileMenuOpen ? 'blur-sm' : ''}`}
+      >
       {/* Hero Section */}
       <section className="relative pt-12 pb-24 md:pt-20 md:pb-32 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-8 items-center">
@@ -601,7 +606,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
           </div>
         </div>
       </footer>
-      </div>
+      </motion.div>
 
       {/* Real Policies and Terms Modals */}
       {activeModal && (

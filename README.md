@@ -10,30 +10,11 @@ View your app in AI Studio: https://ai.studio/apps/d19ad1a7-4fdc-4f35-82a8-8683c
 
 ## Run Locally
 
-**Prerequisites:** Node.js
+**Prerequisites:**  Node.js
+
 
 1. Install dependencies:
    `npm install`
-2. Copy `.env.example` to `.env` and fill in the required values:
-   - `GEMINI_API_KEY`
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
-   - `SUPABASE_URL` (backend fallback)
-   - `SUPABASE_ANON_KEY` (backend fallback)
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
-   - `RESEND_API_KEY`
-   - `MERCADOPAGO_ACCESS_TOKEN`
-   - `APP_URL`
-
-   Notes:
-   - Frontend app uses `VITE_*` and `NEXT_PUBLIC_*` variables.
-   - The server-side backend also accepts `SUPABASE_URL` and `SUPABASE_ANON_KEY`.
+2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
-
-## Useful commands
-
-- Build production app: `npm run build`
-- Start built server: `npm run start`
-- Run type check: `npm run lint`

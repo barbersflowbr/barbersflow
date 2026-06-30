@@ -32,11 +32,13 @@ import { initialAvailableHours } from "../data";
 import { Barber, Service, Appointment } from "../types";
 import {
   Barbearia,
+  getUnavailableSlots,
   mockBarbearia,
 } from "../lib/db";
-import { addBooking, checkBookingAvailability } from "../lib/api";
+import { addBooking } from "../lib/api";
 import { supabase } from "../lib/supabase";
 import ClientProfile from "./ClientProfile";
+import LoyaltyCard from "./LoyaltyCard";
 import { PWAInstallPrompt } from "./PWAInstallPrompt";
 import { PWAShellSkeleton } from "./LoadingSkeleton";
 
@@ -180,6 +182,20 @@ export default function ClientPWA({
     null,
   );
   const [showProfile, setShowProfile] = useState(false);
+  const [loyaltyPoints, setLoyaltyPoints] = useState(0);
+
+  // Fetch loyalty points for the client
+  useEffect(() => {
+    if (activeBarbearia && (clientPhone || clientEmail)) {
+      const client = activeBarbearia.clients?.find(c => 
+        (clientPhone && c.phone === clientPhone) || 
+        (clientEmail && c.email === clientEmail)
+      );
+      if (client) {
+        setLoyaltyPoints(client.loyaltyPoints || 0);
+      }
+    }
+  }, [activeBarbearia, clientPhone, clientEmail]);
 
   // Request notification permission on mount
   useEffect(() => {
@@ -570,21 +586,6 @@ export default function ClientPWA({
     };
 
     try {
-      const availability = await checkBookingAvailability({
-        barbeariaId: activeBarbearia.id,
-        barberId: selectedBarber.id,
-        date: selectedDate,
-        time: selectedTime,
-      });
-
-      if (!availability?.available) {
-        setBookingError(
-          "Este horário já não está disponível. Por favor, escolha outro horário.",
-        );
-        setStep(3);
-        return;
-      }
-
       const b = await addBooking(activeBarbearia.id, payload);
       setConfirmedBooking(b);
       triggerVibration("success");
@@ -607,6 +608,42 @@ export default function ClientPWA({
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const downloadICS = () => {
+    if (!confirmedBooking || !selectedService || !selectedBarber) return;
+    
+    const startTime = selectedDate.replace(/-/g, '') + 'T' + selectedTime?.replace(':', '') + '00';
+    const duration = selectedService.duration;
+    
+    const [h, m] = selectedTime!.split(':').map(Number);
+    const endDate = new Date(0, 0, 0, h, m + duration);
+    const endTime = selectedDate.replace(/-/g, '') + 'T' + 
+                    String(endDate.getHours()).padStart(2, '0') + 
+                    String(endDate.getMinutes()).padStart(2, '0') + '00';
+
+    const vcalendar = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//BarbersFlow//BR',
+      'BEGIN:VEVENT',
+      `UID:${confirmedBooking.id}@barbersflow.com`,
+      `DTSTART:${startTime}`,
+      `DTEND:${endTime}`,
+      `SUMMARY:Agendamento: ${activeBarbearia?.name} - ${selectedService.name}`,
+      `DESCRIPTION:Agendamento com ${selectedBarber.name} na ${activeBarbearia?.name}.`,
+      `LOCATION:${activeBarbearia?.location || 'Barbearia'}`,
+      'END:VEVENT',
+      'END:VCALENDAR'
+    ].join('\r\n');
+
+    const blob = new Blob([vcalendar], { type: 'text/calendar;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `agendamento-${activeBarbearia?.slug}.ics`;
+    link.click();
+    
+    triggerVibration("medium");
   };
 
   const resetFlow = () => {
@@ -887,6 +924,15 @@ export default function ClientPWA({
                       </div>
                     </div>
                   </div>
+
+                  {/* Loyalty Card Segment */}
+                  {activeBarbearia?.loyaltyConfig?.enabled && (
+                    <LoyaltyCard 
+                      points={loyaltyPoints} 
+                      maxPoints={activeBarbearia.loyaltyConfig.pointsToReward || 10} 
+                      reward={activeBarbearia.loyaltyConfig.rewardDescription || 'Corte Grátis'} 
+                    />
+                  )}
 
                   {/* About / Welcome Segment */}
                   <div className="bg-white/[0.01] border border-white/5 rounded-2xl p-5">
@@ -1692,6 +1738,14 @@ export default function ClientPWA({
               </div>
 
               <div className="space-y-2.5">
+                <button
+                  onClick={downloadICS}
+                  className="w-full py-4 rounded-xl bg-amber-500 text-black font-extrabold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-[0_4px_15px_rgba(245,158,11,0.2)] hover:bg-amber-400 transition-all cursor-pointer"
+                >
+                  <Calendar className="w-4.5 h-4.5" />
+                  Lembrar no Calendário
+                </button>
+
                 <button
                   onClick={resetFlow}
                   className="w-full py-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 font-bold text-xs text-white transition-all cursor-pointer"

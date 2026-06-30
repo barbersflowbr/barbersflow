@@ -3,7 +3,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
@@ -17,28 +16,18 @@ const logger = pino();
 
 const envSchema = z.object({
   PORT: z.string().default('3000'),
-  VITE_SUPABASE_URL: z.string().url().optional(),
-  VITE_SUPABASE_ANON_KEY: z.string().min(1).optional(),
-  SUPABASE_URL: z.string().url().optional(),
-  SUPABASE_ANON_KEY: z.string().min(1).optional(),
-}).refine(
-  (data) => Boolean(data.VITE_SUPABASE_URL || data.SUPABASE_URL),
-  { message: 'Missing Supabase URL', path: ['VITE_SUPABASE_URL', 'SUPABASE_URL'] },
-).refine(
-  (data) => Boolean(data.VITE_SUPABASE_ANON_KEY || data.SUPABASE_ANON_KEY),
-  { message: 'Missing Supabase anon key', path: ['VITE_SUPABASE_ANON_KEY', 'SUPABASE_ANON_KEY'] },
-);
+  VITE_SUPABASE_URL: z.string().url(),
+  VITE_SUPABASE_ANON_KEY: z.string().min(1),
+});
 
 const env = envSchema.safeParse(process.env);
 if (!env.success) {
-  logger.error({ error: env.error.format() }, 'Invalid environment variables');
+  logger.error('Invalid environment variables:', env.error.format());
   process.exit(1);
 }
 
 const getSupabase = () => {
-  const supabaseUrl = env.data.VITE_SUPABASE_URL || env.data.SUPABASE_URL || '';
-  const supabaseAnonKey = env.data.VITE_SUPABASE_ANON_KEY || env.data.SUPABASE_ANON_KEY || '';
-  return createClient(supabaseUrl, supabaseAnonKey);
+  return createClient(env.data.VITE_SUPABASE_URL, env.data.VITE_SUPABASE_ANON_KEY);
 };
 const supabase = getSupabase();
 
@@ -453,7 +442,7 @@ async function startServer() {
         .single();
 
       if (error || !data) {
-        logger.warn({ error: error?.message }, `Could not find barbearia with slug "${slug}" for dynamic manifest, serving default.`);
+        logger.warn(`Could not find barbearia with slug "${slug}" for dynamic manifest, serving default.`, error?.message);
         res.json(defaultManifest);
         return;
       }

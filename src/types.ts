@@ -59,6 +59,7 @@ export interface Client {
   phone: string;
   email?: string;
   notes?: string;
+  loyaltyPoints?: number;
   createdAt: string;
 }
 

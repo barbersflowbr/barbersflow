@@ -55,6 +55,11 @@ export interface Barbearia {
   location?: string;
   phone?: string; // support contact
   isOnboarded?: boolean;
+  loyaltyConfig?: {
+    enabled: boolean;
+    pointsToReward: number; // e.g. 10
+    rewardDescription: string; // e.g. 'Corte Grátis'
+  };
   barbers: Barber[];
   services: Service[];
   inventory?: InventoryItem[];
@@ -338,72 +343,6 @@ export async function getAllBarbearias(): Promise<Barbearia[]> {
     handleSupabaseError(error, OperationType.LIST, BARBEARIAS_COL);
   }
   return data as Barbearia[];
-}
-
-export async function createSandboxBarbearias(dummyShops: Array<{name: string; slug: string; planName: string; status: 'active' | 'trial'; email: string}>): Promise<number> {
-  const shopsToInsert = dummyShops.map((shop) => {
-    const planInfo = {
-      name: shop.planName,
-      status: shop.status,
-      planEndsAt: shop.status === 'active' ? new Date(new Date().getTime() + 30 * 24 * 60 * 60 * 1000).toISOString() : undefined,
-      trialEndsAt: shop.status === 'trial' ? new Date(new Date().getTime() + 14 * 24 * 60 * 60 * 1000).toISOString() : undefined,
-    };
-
-    return {
-      id: crypto.randomUUID(),
-      name: shop.name,
-      email: shop.email,
-      slug: shop.slug,
-      plan: JSON.stringify(planInfo),
-      isOnboarded: true,
-      barbers: [
-        { id: 'b1', name: 'Carlos Master', phone: '11999999999', bio: 'Navalha e barba de respeito.', avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=100&h=100&fit=crop', available: true },
-        { id: 'b2', name: 'Felipe Barber', phone: '11988888888', bio: 'Cortes degradê e modernos.', avatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=100&h=100&fit=crop', available: true }
-      ],
-      services: [
-        { id: 's1', name: 'Corte Tradicional', price: 40, duration: 30, category: 'Cabelo', description: 'Corte tradicional com tesoura e máquina.' },
-        { id: 's2', name: 'Barba de Toalha Quente', price: 30, duration: 20, category: 'Barba', description: 'Barba clássica com espuma e toalha.' }
-      ],
-      createdAt: new Date().toISOString()
-    };
-  });
-
-  const { error } = await supabase
-    .from(BARBEARIAS_COL)
-    .insert(shopsToInsert);
-
-  if (error) {
-    handleSupabaseError(error, OperationType.CREATE, BARBEARIAS_COL);
-  }
-
-  return shopsToInsert.length;
-}
-
-export async function purgeSandboxBarbearias(): Promise<number> {
-  const { data, error } = await supabase
-    .from(BARBEARIAS_COL)
-    .select('id')
-    .like('email', '%@example.com');
-
-  if (error) {
-    handleSupabaseError(error, OperationType.LIST, BARBEARIAS_COL);
-  }
-
-  const ids = (data || []).map((item: any) => item.id).filter(Boolean);
-  if (ids.length === 0) {
-    return 0;
-  }
-
-  const { error: deleteError } = await supabase
-    .from(BARBEARIAS_COL)
-    .delete()
-    .in('id', ids);
-
-  if (deleteError) {
-    handleSupabaseError(deleteError, OperationType.DELETE, BARBEARIAS_COL);
-  }
-
-  return ids.length;
 }
 
 // Subscribe to bookings in real-time
