@@ -136,7 +136,7 @@ export const PWAInstallPrompt: React.FC<PWAInstallPromptProps> = ({
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={toggleExpand}
-            className="fixed bottom-6 right-6 z-50 bg-gradient-to-r from-amber-500 to-amber-600 text-black font-semibold rounded-full p-3.5 shadow-2xl flex items-center justify-center gap-2 border border-amber-400/30 group cursor-pointer"
+            className="fixed bottom-6 right-[88px] z-50 bg-gradient-to-r from-amber-500 to-amber-600 text-black font-semibold rounded-full p-3.5 shadow-2xl flex items-center justify-center gap-2 border border-amber-400/30 group cursor-pointer"
           >
             <div className="absolute inset-0 rounded-full bg-amber-400/20 animate-ping" />
             <Download className="w-5 h-5 animate-bounce" />
@@ -159,7 +159,7 @@ export const PWAInstallPrompt: React.FC<PWAInstallPromptProps> = ({
               animate={{ opacity: 0.5 }}
               exit={{ opacity: 0 }}
               onClick={toggleExpand}
-              className="fixed inset-0 bg-black z-50 backdrop-blur-xs"
+              className="fixed inset-0 bg-black z-60 backdrop-blur-xs"
             />
 
             {/* Bottom Sheet for Mobile, Floating Box for Desktop */}
@@ -169,7 +169,7 @@ export const PWAInstallPrompt: React.FC<PWAInstallPromptProps> = ({
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: "100%", opacity: 0 }}
               transition={{ type: "spring", damping: 25, stiffness: 220 }}
-              className="fixed bottom-0 left-0 right-0 md:bottom-6 md:right-6 md:left-auto md:max-w-md w-full bg-[#121215] border-t md:border border-white/10 rounded-t-3xl md:rounded-3xl shadow-2xl z-50 overflow-hidden text-gray-100 flex flex-col"
+              className="fixed bottom-0 left-0 right-0 md:bottom-6 md:right-6 md:left-auto md:max-w-md w-full bg-[#121215] border-t md:border border-white/10 rounded-t-3xl md:rounded-3xl shadow-2xl z-60 overflow-hidden text-gray-100 flex flex-col"
             >
               {/* Drag Handle or Small Indicator for Mobile */}
               <div className="w-full flex justify-center pt-3 pb-1 md:hidden">
