@@ -61,7 +61,8 @@ import {
   Maximize2,
   Percent,
   TrendingDown,
-  Star
+  Star,
+  HelpCircle
 } from 'lucide-react';
 import { initialAvailableHours } from '../data';
 import { Appointment, Barber, Service, InventoryItem } from '../types';
@@ -306,6 +307,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
   const [configPhone, setConfigPhone] = useState('');
   const [configLogo, setConfigLogo] = useState('');
   const [configSlug, setConfigSlug] = useState('');
+  const [configCustomDomain, setConfigCustomDomain] = useState('');
   const [isSavingConfig, setIsSavingConfig] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
 
@@ -354,6 +356,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
       setConfigPhone(activeBarbearia.phone || '');
       setConfigLogo(activeBarbearia.logo || 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=150&h=150');
       setConfigSlug(activeBarbearia.slug || '');
+      setConfigCustomDomain(activeBarbearia.customDomain || '');
       
       // Sync loyalty config
       if (activeBarbearia.loyaltyConfig) {
@@ -374,6 +377,9 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
   const [selectedServiceId, setSelectedServiceId] = useState('');
   const [isBlockSlotMode, setIsBlockSlotMode] = useState(false);
   const [isAddClientModalOpen, setIsAddClientModalOpen] = useState(false);
+  const [isMigrationModalOpen, setIsMigrationModalOpen] = useState(false);
+  const [migrationJson, setMigrationJson] = useState('');
+  const [isMigrating, setIsMigrating] = useState(false);
   const [newClientName, setNewClientName] = useState('');
   const [newClientPhone, setNewClientPhone] = useState('');
   const [newClientEmail, setNewClientEmail] = useState('');
@@ -705,6 +711,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
         phone: configPhone.trim(),
         logo: configLogo.trim(),
         slug: sanitizedSlug,
+        customDomain: configCustomDomain.trim().toLowerCase(),
         loyaltyConfig: {
           enabled: loyaltyEnabled,
           pointsToReward: loyaltyPointsToReward,
@@ -719,6 +726,7 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
         phone: configPhone.trim(),
         logo: configLogo.trim(),
         slug: sanitizedSlug,
+        customDomain: configCustomDomain.trim().toLowerCase(),
         loyaltyConfig: {
           enabled: loyaltyEnabled,
           pointsToReward: loyaltyPointsToReward,
@@ -1109,6 +1117,60 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
       console.error(err);
       alert('Erro ao cancelar agendamento: ' + err.message);
       showToast('Erro ao cancelar agendamento', 'error');
+    }
+  };
+
+  const handleMigrateClients = async () => {
+    if (!activeBarbearia || !migrationJson) return;
+    
+    setIsMigrating(true);
+    try {
+      let importedData: any[] = [];
+      try {
+        importedData = JSON.parse(migrationJson);
+      } catch (e) {
+        alert('O formato do JSON é inválido. Certifique-se de que é uma lista de objetos.');
+        return;
+      }
+
+      if (!Array.isArray(importedData)) {
+        alert('Os dados devem ser uma lista (array) de clientes.');
+        return;
+      }
+
+      const newClients = importedData.map(c => ({
+        id: c.id || Math.random().toString(36).substring(2, 15),
+        name: c.name || c.nome || 'Cliente Importado',
+        phone: c.phone || c.whatsapp || c.celular || '',
+        email: c.email || '',
+        loyaltyPoints: c.loyaltyPoints || c.pontos || 0,
+        createdAt: c.createdAt || new Date().toISOString()
+      }));
+
+      const currentClients = activeBarbearia.clients || [];
+      // Avoid duplicates based on phone or name
+      const filteredNewClients = newClients.filter(nc => 
+        !currentClients.find(cc => (nc.phone && cc.phone === nc.phone) || (nc.name === cc.name))
+      );
+
+      if (filteredNewClients.length === 0) {
+        showToast('Nenhum novo cliente para importar (já existem na base).', 'info');
+        setIsMigrationModalOpen(false);
+        return;
+      }
+
+      await updateBarbearia(activeBarbearia.id, {
+        clients: [...currentClients, ...filteredNewClients]
+      });
+
+      setIsMigrationModalOpen(false);
+      setMigrationJson('');
+      showToast(`${filteredNewClients.length} clientes importados com sucesso!`, 'success');
+    } catch (err: any) {
+      console.error(err);
+      alert('Erro na migração: ' + err.message);
+    } finally {
+      setIsMigrating(false);
     }
   };
 
@@ -2917,13 +2979,22 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
                     </div>
                   </div>
                   
-                  <button 
-                    onClick={() => setIsAddClientModalOpen(true)}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-black text-sm font-bold rounded-xl transition-colors shrink-0"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Adicionar Cliente
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => setIsMigrationModalOpen(true)}
+                      className="flex items-center gap-2 px-4 py-2.5 bg-white/5 hover:bg-white/10 text-gray-300 text-sm font-bold rounded-xl border border-white/10 transition-colors shrink-0 cursor-pointer"
+                    >
+                      <Download className="w-4 h-4" />
+                      Importar
+                    </button>
+                    <button 
+                      onClick={() => setIsAddClientModalOpen(true)}
+                      className="flex items-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-black text-sm font-bold rounded-xl transition-colors shrink-0 cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Adicionar Cliente
+                    </button>
+                  </div>
                 </div>
 
                 {(() => {
@@ -3155,6 +3226,26 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
                           </button>
                         )}
                       </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-mono text-gray-400 mb-1.5 uppercase tracking-wider font-semibold flex items-center gap-2">
+                        Domínio Próprio (Opcional)
+                        <div className="group relative">
+                          <HelpCircle className="w-3 h-3 text-gray-500 cursor-help" />
+                          <div className="absolute left-0 bottom-full mb-2 w-48 p-2 bg-[#0E0E10] border border-white/10 rounded-lg text-[9px] text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
+                            Aponte seu CNAME para o nosso domínio para usar seu próprio site (ex: agendamento.suabarbearia.com.br).
+                          </div>
+                        </div>
+                      </label>
+                      <input
+                        type="text"
+                        value={configCustomDomain}
+                        onChange={(e) => setConfigCustomDomain(e.target.value.toLowerCase().trim())}
+                        placeholder="Ex: agendamento.minhabarbearia.com"
+                        className="w-full p-3 bg-[#131316] border border-white/5 rounded-xl text-sm text-gray-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 font-mono"
+                      />
+                      <span className="text-[10px] text-gray-500 mt-1 block italic">Isso permite que seus clientes acessem o app diretamente pelo seu domínio.</span>
                     </div>
 
                     <div>
@@ -4454,6 +4545,87 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MIGRATION MODAL */}
+      <AnimatePresence>
+        {isMigrationModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsMigrationModalOpen(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-lg bg-[#0E0E10] border border-white/10 rounded-2xl p-6 shadow-2xl"
+            >
+              <div className="flex items-start justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/20">
+                    <Download className="w-5 h-5 text-amber-500" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-white tracking-tight">Importar Clientes</h3>
+                    <p className="text-xs text-gray-400 mt-1">Cole o JSON da sua base de dados do AI Studio ou de outra fonte.</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setIsMigrationModalOpen(false)}
+                  className="p-2 text-gray-500 hover:text-white bg-white/5 rounded-full transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-mono text-gray-400 mb-1.5 uppercase tracking-wider font-semibold">JSON dos Clientes</label>
+                  <textarea
+                    rows={10}
+                    value={migrationJson}
+                    onChange={(e) => setMigrationJson(e.target.value)}
+                    placeholder='[
+  { "name": "João Silva", "phone": "11999999999", "email": "joao@exemplo.com" },
+  { "name": "Maria Costa", "phone": "11888888888" }
+]'
+                    className="w-full p-3 bg-[#131316] border border-white/10 rounded-xl text-[11px] font-mono text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/80 resize-none"
+                  />
+                  <p className="text-[10px] text-gray-500 mt-2 italic">
+                    Dica: No seu projeto antigo do AI Studio, você pode copiar a lista de clientes do localStorage ou de um arquivo JSON.
+                  </p>
+                </div>
+
+                <div className="pt-4 flex items-center gap-3">
+                  <button
+                    type="button"
+                    disabled={isMigrating}
+                    onClick={() => setIsMigrationModalOpen(false)}
+                    className="flex-1 py-3.5 rounded-xl bg-white/5 border border-white/5 text-sm text-gray-300 font-semibold hover:bg-white/10 transition-colors cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleMigrateClients}
+                    disabled={isMigrating || !migrationJson}
+                    className="flex-1 py-3.5 rounded-xl bg-amber-500 text-black text-sm font-extrabold tracking-wide hover:bg-amber-400 transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isMigrating ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin" />
+                        Migrando...
+                      </>
+                    ) : 'Confirmar Importação'}
+                  </button>
+                </div>
+              </div>
             </motion.div>
           </div>
         )}

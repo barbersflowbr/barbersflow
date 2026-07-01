@@ -293,8 +293,8 @@ async function startServer() {
       const resend = new Resend(resendKey);
 
       const { data, error } = await resend.emails.send({
-        from: 'BarbersFlow <onboarding@resend.dev>', // Usando dominio de teste do resend se n tiver dominio verificado
-        to: [email],
+        from: 'onboarding@resend.dev',
+        to: email,
         subject: `Bem-vindo ao BarbersFlow, ${name}! 🚀`,
         html: `
           <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
@@ -318,8 +318,8 @@ async function startServer() {
       });
 
       if (error) {
-        console.error('Resend error:', error);
-        res.status(500).json({ error: error.message });
+        logger.error({ resendError: error }, 'Resend API error');
+        res.status(500).json({ error: error.message || 'Erro de validação no Resend' });
         return;
       }
 
@@ -389,6 +389,7 @@ async function startServer() {
   // Dynamic PWA Manifest Endpoint
   app.get('/manifest.json', async (req, res) => {
     const slug = req.query.slug as string;
+    const host = req.headers.host;
 
     const defaultManifest = {
       name: "BarbersFlow - Agendamento de Barbearias",
@@ -429,30 +430,44 @@ async function startServer() {
       ]
     };
 
-    if (!slug) {
-      res.json(defaultManifest);
-      return;
-    }
-
     try {
-      const { data, error } = await supabase
-        .from('barbearias')
-        .select('name, slug, logo')
-        .eq('slug', slug.toLowerCase())
-        .single();
+      let data = null;
+      let error = null;
+
+      if (slug) {
+        const result = await supabase
+          .from('barbearias')
+          .select('name, slug, logo, customDomain')
+          .eq('slug', slug.toLowerCase())
+          .single();
+        data = result.data;
+        error = result.error;
+      } else if (host && !host.includes('.run.app') && !host.includes('localhost')) {
+        const result = await supabase
+          .from('barbearias')
+          .select('name, slug, logo, customDomain')
+          .eq('customDomain', host.toLowerCase())
+          .single();
+        data = result.data;
+        error = result.error;
+      }
 
       if (error || !data) {
-        logger.warn({ errorMessage: error?.message }, `Could not find barbearia with slug "${slug}" for dynamic manifest, serving default.`);
+        if (slug) {
+          logger.warn({ errorMessage: error?.message }, `Could not find barbearia with slug "${slug}" for dynamic manifest, serving default.`);
+        }
         res.json(defaultManifest);
         return;
       }
+
+      const isCustomDomain = host?.toLowerCase() === (data.customDomain || '').toLowerCase();
 
       const customManifest = {
         name: data.name,
         short_name: data.name.split(" ")[0] || data.name,
         description: `Agende seu horário na ${data.name} via BarbersFlow.`,
-        start_url: `/${data.slug}`,
-        id: `/${data.slug}`,
+        start_url: isCustomDomain ? "/" : `/${data.slug}`,
+        id: isCustomDomain ? "/" : `/${data.slug}`,
         display: "standalone",
         orientation: "portrait",
         background_color: "#0E0E11",
@@ -462,25 +477,25 @@ async function startServer() {
           {
             src: data.logo || "/logo.svg",
             sizes: "192x192",
-            type: data.logo ? "image/png" : "image/svg+xml",
+            type: data.logo ? (data.logo.endsWith('.svg') ? "image/svg+xml" : "image/png") : "image/svg+xml",
             purpose: "any"
           },
           {
             src: data.logo || "/logo.svg",
             sizes: "512x512",
-            type: data.logo ? "image/png" : "image/svg+xml",
+            type: data.logo ? (data.logo.endsWith('.svg') ? "image/svg+xml" : "image/png") : "image/svg+xml",
             purpose: "any"
           },
           {
             src: data.logo || "/logo.svg",
             sizes: "192x192",
-            type: data.logo ? "image/png" : "image/svg+xml",
+            type: data.logo ? (data.logo.endsWith('.svg') ? "image/svg+xml" : "image/png") : "image/svg+xml",
             purpose: "maskable"
           },
           {
             src: data.logo || "/logo.svg",
             sizes: "512x512",
-            type: data.logo ? "image/png" : "image/svg+xml",
+            type: data.logo ? (data.logo.endsWith('.svg') ? "image/svg+xml" : "image/png") : "image/svg+xml",
             purpose: "maskable"
           }
         ]

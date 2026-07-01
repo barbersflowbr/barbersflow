@@ -64,6 +64,7 @@ export interface Barbearia {
   services: Service[];
   inventory?: InventoryItem[];
   clients?: Client[];
+  customDomain?: string; // e.g. 'barbeariadofelipe.com.br'
   createdAt: string;
 }
 

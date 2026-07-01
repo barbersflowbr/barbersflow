@@ -8,11 +8,21 @@ CREATE TABLE IF NOT EXISTS public.barbearias (
     logo TEXT,
     location TEXT,
     phone TEXT,
+    "customDomain" TEXT,
+    "loyaltyConfig" JSONB DEFAULT '{"enabled": false, "pointsToReward": 10, "rewardDescription": "Corte Grátis"}'::jsonb,
+    inventory JSONB DEFAULT '[]'::jsonb,
+    clients JSONB DEFAULT '[]'::jsonb,
     "isOnboarded" BOOLEAN DEFAULT false,
     barbers JSONB DEFAULT '[]'::jsonb,
     services JSONB DEFAULT '[]'::jsonb,
     "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Migration SQL to add missing columns if they don't exist:
+-- ALTER TABLE public.barbearias ADD COLUMN IF NOT EXISTS "customDomain" TEXT;
+-- ALTER TABLE public.barbearias ADD COLUMN IF NOT EXISTS "loyaltyConfig" JSONB DEFAULT '{"enabled": false, "pointsToReward": 10, "rewardDescription": "Corte Grátis"}'::jsonb;
+-- ALTER TABLE public.barbearias ADD COLUMN IF NOT EXISTS inventory JSONB DEFAULT '[]'::jsonb;
+-- ALTER TABLE public.barbearias ADD COLUMN IF NOT EXISTS clients JSONB DEFAULT '[]'::jsonb;
 
 -- Create Bookings table
 CREATE TABLE IF NOT EXISTS public.bookings (

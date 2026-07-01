@@ -155,6 +155,32 @@ export default function App() {
       const pathname = window.location.pathname;
       const hash = window.location.hash;
       const normalizedPath = pathname.replace(/^\/+|\/+$/g, "").toLowerCase();
+      const hostname = window.location.hostname;
+
+      // 0. Custom Domain Routing
+      const isPlatformDomain = hostname.endsWith(".run.app") || 
+                              hostname.endsWith(".web.app") || 
+                              hostname === "localhost" || 
+                              hostname === "127.0.0.1";
+
+      if (!isPlatformDomain) {
+        try {
+          const { supabase } = await import("./lib/supabase");
+          const { data, error } = await supabase
+            .from("barbearias")
+            .select("*")
+            .eq("customDomain", hostname)
+            .single();
+
+          if (data && !error) {
+            handleSetActiveBarbearia(data as Barbearia, false);
+            navigateToView("pwa");
+            return;
+          }
+        } catch (err) {
+          console.error("Custom domain routing error:", err);
+        }
+      }
 
       // 1. Explicit Reserved Views
       if (normalizedPath === "superadmin" || hash === "#superadmin") {
