@@ -27,6 +27,7 @@ import {
   QrCode,
   X,
   MapPin,
+  LayoutDashboard,
 } from "lucide-react";
 import { initialAvailableHours } from "../data";
 import { Barber, Service, Appointment } from "../types";
@@ -183,6 +184,20 @@ export default function ClientPWA({
   );
   const [showProfile, setShowProfile] = useState(false);
   const [loyaltyPoints, setLoyaltyPoints] = useState(0);
+  const [isOwner, setIsOwner] = useState(false);
+
+  // Check if logged in user is the owner of this barbearia
+  useEffect(() => {
+    const checkOwnership = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user && activeBarbearia && session.user.id === activeBarbearia.id) {
+        setIsOwner(true);
+      } else {
+        setIsOwner(false);
+      }
+    };
+    checkOwnership();
+  }, [activeBarbearia]);
 
   // Fetch loyalty points for the client
   useEffect(() => {
@@ -757,6 +772,23 @@ export default function ClientPWA({
       )}
       {/* PWA App Navigation Header */}
       <header className="px-5 py-4 border-b border-white/5 bg-[#121215]/80 shrink-0">
+        {isOwner && (
+          <div className="mb-4 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-amber-500" />
+              <span className="text-[10px] font-bold text-amber-500 uppercase tracking-widest">
+                Você está visualizando como proprietário
+              </span>
+            </div>
+            <button
+              onClick={() => onNavigate('admin')}
+              className="px-3 py-1.5 rounded-xl bg-amber-500 text-black text-[9px] font-extrabold uppercase tracking-widest flex items-center gap-1.5 hover:bg-amber-400 transition-all cursor-pointer shadow-lg shadow-amber-500/10"
+            >
+              <LayoutDashboard className="w-3.5 h-3.5" />
+              Acessar Painel Admin
+            </button>
+          </div>
+        )}
         <div
           className={`flex items-center justify-between w-full ${isStandalone ? "max-w-5xl lg:max-w-6xl mx-auto px-1 md:px-4" : ""}`}
         >
@@ -781,6 +813,7 @@ export default function ClientPWA({
               </h1>
             </div>
           </div>
+          
           {step > 0 && step < 5 && (
             <button
               onClick={() => {

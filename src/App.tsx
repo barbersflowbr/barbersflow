@@ -154,54 +154,53 @@ export default function App() {
     const handleNavigation = async () => {
       const pathname = window.location.pathname;
       const hash = window.location.hash;
+      const normalizedPath = pathname.replace(/^\/+|\/+$/g, "").toLowerCase();
 
-      if (pathname === "/superadmin" || hash === "#superadmin") {
+      // 1. Explicit Reserved Views
+      if (normalizedPath === "superadmin" || hash === "#superadmin") {
         navigateToView("superadmin");
         return;
       }
 
-      if (pathname === "/admin" || hash === "#admin") {
+      if (normalizedPath === "admin" || hash === "#admin") {
         navigateToView("admin");
         return;
       }
 
-      if (pathname === "/pwa" || hash === "#pwa") {
+      if (normalizedPath === "pwa") {
         navigateToView("pwa");
         return;
       }
 
-      const normalizedSlug = pathname.replace(/^\/+|\/+$/g, "").toLowerCase();
-
-      // Check if user is in standalone mode (installed PWA) and landed on root
+      // 2. Standalone Mode Logic (Installed PWA)
       const isStandaloneMode =
         window.matchMedia("(display-mode: standalone)").matches ||
         (window.navigator as any).standalone;
-      if (isStandaloneMode && normalizedSlug.length === 0) {
-        const saved = localStorage.getItem("barbersflow_active_barbearia");
-        if (saved) {
-          try {
-            const localBarbearia = JSON.parse(saved);
-            if (localBarbearia && localBarbearia.slug) {
-              window.history.replaceState({}, "", `/${localBarbearia.slug}`);
-              handleSetActiveBarbearia(localBarbearia, false);
-              navigateToView("pwa");
-              return;
-            }
-          } catch {}
+
+      if (isStandaloneMode && normalizedPath === "") {
+        const { supabase } = await import("./lib/supabase");
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session?.user) {
+          const { data: barbeariaData } = await supabase
+            .from("barbearias")
+            .select("*")
+            .eq("id", session.user.id)
+            .single();
+            
+          if (barbeariaData) {
+            handleSetActiveBarbearia(barbeariaData as Barbearia);
+            navigateToView("admin");
+            return;
+          }
         }
+        // For non-admins in standalone mode at root, we still show landing
+        // unless they have a VERY specific saved barbearia that they were just looking at
       }
 
-      // Check if it's a slug routing (e.g. /barbearia-do-joao)
-      if (
-        normalizedSlug.length > 0 &&
-        normalizedSlug !== "admin" &&
-        normalizedSlug !== "pwa" &&
-        normalizedSlug !== "superadmin" &&
-        normalizedSlug !== "features" &&
-        normalizedSlug !== "bento" &&
-        normalizedSlug !== "pricing"
-      ) {
-        // 1. Fast fallback: check memory or localStorage
+      // 3. Slug Routing (e.g. /barbearia-do-joao)
+      const reservedSlugs = ["admin", "pwa", "superadmin", "features", "bento", "pricing"];
+      if (normalizedPath.length > 0 && !reservedSlugs.includes(normalizedPath)) {
         const saved = localStorage.getItem("barbersflow_active_barbearia");
         let localBarbearia: Barbearia | null = null;
         if (saved) {
@@ -213,76 +212,50 @@ export default function App() {
         if (
           localBarbearia &&
           localBarbearia.slug &&
-          localBarbearia.slug.toLowerCase() === normalizedSlug
+          localBarbearia.slug.toLowerCase() === normalizedPath
         ) {
           handleSetActiveBarbearia(localBarbearia, false);
           navigateToView("pwa");
           return;
         }
 
-        if (
-          activeBarbearia &&
-          activeBarbearia.slug &&
-          activeBarbearia.slug.toLowerCase() === normalizedSlug
-        ) {
-          navigateToView("pwa");
-          return;
-        }
-
-        if (normalizedSlug === "barbersflow-demo") {
+        if (normalizedPath === "barbersflow-demo") {
           const { mockBarbearia } = await import("./lib/db");
           handleSetActiveBarbearia(mockBarbearia, false);
           navigateToView("pwa");
           return;
         }
 
-        // 2. Query Supabase
         try {
           const { supabase } = await import("./lib/supabase");
           const { data, error } = await supabase
             .from("barbearias")
             .select("*")
-            .eq("slug", normalizedSlug)
+            .eq("slug", normalizedPath)
             .single();
 
           if (data && !error) {
             handleSetActiveBarbearia(data as Barbearia, false);
             navigateToView("pwa");
+            return;
           } else {
-            // Check listing as fallback
             const { getAllBarbearias } = await import("./lib/db");
             const all = await getAllBarbearias();
             const matched = all.find(
-              (b) => b.slug && b.slug.toLowerCase() === normalizedSlug,
+              (b) => b.slug && b.slug.toLowerCase() === normalizedPath,
             );
             if (matched) {
               handleSetActiveBarbearia(matched, false);
               navigateToView("pwa");
-            } else {
-              navigateToView("landing");
+              return;
             }
           }
         } catch (err) {
-          // Fallback listing check on network/parsing failure
-          try {
-            const { getAllBarbearias } = await import("./lib/db");
-            const all = await getAllBarbearias();
-            const matched = all.find(
-              (b) => b.slug && b.slug.toLowerCase() === normalizedSlug,
-            );
-            if (matched) {
-              handleSetActiveBarbearia(matched, false);
-              navigateToView("pwa");
-            } else {
-              navigateToView("landing");
-            }
-          } catch {
-            navigateToView("landing");
-          }
+          console.error("Slug routing error:", err);
         }
-        return;
       }
 
+      // 4. Default: Landing Page
       navigateToView("landing");
     };
 

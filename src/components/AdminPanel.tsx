@@ -60,7 +60,8 @@ import {
   MessageCircle,
   Maximize2,
   Percent,
-  TrendingDown
+  TrendingDown,
+  Star
 } from 'lucide-react';
 import { initialAvailableHours } from '../data';
 import { Appointment, Barber, Service, InventoryItem } from '../types';
@@ -1057,6 +1058,20 @@ export default function AdminPanel({ onNavigate, activeBarbearia, onSetActiveBar
              await updateBarbearia(activeBarbearia.id, { clients: updatedClients });
              onSetActiveBarbearia({ ...activeBarbearia, clients: updatedClients });
              showToast('Ponto de fidelidade adicionado ao cliente!', 'info');
+          } else {
+             // Upsert client if not found
+             const newLoyaltyClient = {
+               id: Math.random().toString(36).substring(2, 15),
+               name: booking.clientName,
+               phone: booking.clientPhone,
+               email: booking.clientEmail,
+               loyaltyPoints: 1,
+               createdAt: new Date().toISOString()
+             };
+             const updatedClients = [...(activeBarbearia.clients || []), newLoyaltyClient];
+             await updateBarbearia(activeBarbearia.id, { clients: updatedClients });
+             onSetActiveBarbearia({ ...activeBarbearia, clients: updatedClients });
+             showToast('Novo cliente registrado e ponto adicionado!', 'info');
           }
         }
       }

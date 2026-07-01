@@ -22,7 +22,7 @@ const envSchema = z.object({
 
 const env = envSchema.safeParse(process.env);
 if (!env.success) {
-  logger.error('Invalid environment variables:', env.error.format());
+  logger.error({ errors: env.error.format() }, 'Invalid environment variables:');
   process.exit(1);
 }
 
@@ -442,7 +442,7 @@ async function startServer() {
         .single();
 
       if (error || !data) {
-        logger.warn(`Could not find barbearia with slug "${slug}" for dynamic manifest, serving default.`, error?.message);
+        logger.warn({ errorMessage: error?.message }, `Could not find barbearia with slug "${slug}" for dynamic manifest, serving default.`);
         res.json(defaultManifest);
         return;
       }
